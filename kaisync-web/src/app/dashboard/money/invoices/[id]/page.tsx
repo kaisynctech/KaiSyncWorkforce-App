@@ -139,7 +139,8 @@ function MoneyInvoiceDetailInner() {
   const [clientEmail, setClientEmail] = useState<string | null>(null)
 
   // Modal states
-  const [showPay, setShowPay]   = useState(false)
+  // ?pay=1 (from the order page's "Record payment") opens Record payment straight away.
+  const [showPay, setShowPay]   = useState(searchParams.get('pay') === '1')
   // Set when Record payment was opened from a client's proof: saving accepts that proof too.
   const [confirmProofId, setConfirmProofId] = useState<string | null>(null)
   const [creditNote, setCreditNote] = useState<string | null>(null)

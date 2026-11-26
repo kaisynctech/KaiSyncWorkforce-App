@@ -25,7 +25,7 @@ import {
   type QuoteVatChoice,
 } from '@/lib/quote-vat'
 import { escapeIlike } from '@/lib/list-pagination'
-import { createInvoiceFromQuote, openInvoiceForQuote } from '@/lib/money/quote-invoice'
+import { createInvoiceFromQuote } from '@/lib/money/quote-invoice'
 import { CurrencyPicker } from '@/components/money/CurrencyPicker'
 import { formatCurrency } from '@/lib/currencies'
 import { lineTotal, loadPickItems, type EditorLine, type ItemType, type PickItem } from '@/lib/line-items'
@@ -38,7 +38,6 @@ import { whatsAppUrl } from '@/lib/whatsapp'
 import { TemplateLines, engineOf } from '@/components/quotes/TemplateLines'
 import { QuoteDocumentPreview } from '@/components/quotes/QuoteDocumentPreview'
 import { HEADER_LABEL, loadTemplates, type QuoteTemplate } from '@/lib/quote-templates'
-import { processOrder } from '@/lib/money/order-supply'
 import { PERIOD_LABEL, engineLineTotal, orderedForDisplay, quoteTotals, withContingency, type RecurringPeriod } from '@/lib/quote-engine'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -250,19 +249,15 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
   // ── Mutable refs (for use inside async callbacks without stale closures) ──
   const isLoaded       = useRef(false)
-  // An accepted quote is an order: it is read-only until someone chooses "Make changes" (and confirms).
-  const [unlocked, setUnlocked] = useState(false)
-  // "Process order": the purchase orders for the bought-in lines (piece 9).
-  const [processBusy, setProcessBusy] = useState(false)
-  const [confirmUnlock, setConfirmUnlock] = useState(false)
+  // An accepted quote is an order: it opens on the order page, and here it is read-only (never changed).
+  const viewQuote = searchParams.get('view') === 'quote'
+  const [toOrder, setToOrder] = useState(false)
   // A draft that was never sent can be deleted (after asking).
   /** Mark declined (nothing is ever deleted: the quote and its number stay on record). */
   const [confirmDecline, setConfirmDecline] = useState(false)
   const [declineReason, setDeclineReason] = useState('')
   const [declining, setDeclining] = useState(false)
   const lockedRef = useRef(false)
-  // The order's open invoice, if it has one ("Open invoice" instead of "Create invoice").
-  const [openInvoiceId, setOpenInvoiceId] = useState<string | null>(null)
   // An existing quote shows "Loading…" until it has loaded, so nothing is typed into an empty form first.
   const [dataLoaded, setDataLoaded] = useState(!initialQuoteId)
 
@@ -378,7 +373,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     void companyLetterhead(supabase, companyId).then(setLetterhead)
   }, [authReady, companyId]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const locked = status === 'accepted' && !unlocked
+  const locked = status === 'accepted'
 
   // Sales reps for the "Sales rep" field (names only).
   useEffect(() => {
@@ -422,12 +417,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       })
     return () => { live = false }
   }, [companyId, quoteId, status]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => {
-    if (status !== 'accepted' || !companyId || !quoteId) return
-    let live = true
-    void openInvoiceForQuote(supabase, companyId, quoteId).then(id => { if (live) setOpenInvoiceId(id) })
-    return () => { live = false }
-  }, [status, companyId, quoteId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!companyId) return
@@ -549,6 +538,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
         const qNum = (q.quote_number as string | null) ?? null
         setQuoteNumber(qNum);      quoteNumberRef.current = qNum
         setStatus((q.status as string) ?? 'draft')
+        if (q.status === 'accepted' && !viewQuote) { setToOrder(true); router.replace(`/dashboard/money/orders/${qid}`); return }
         setAcceptedSig(q.accepted_by_name ? { name: String(q.accepted_by_name), at: (q.accepted_at as string | null) ?? null, signature: (q.accepted_signature as string | null) ?? null } : null)
         setAcceptedSig(q.accepted_by_name ? { name: String(q.accepted_by_name), at: (q.accepted_at as string | null) ?? null, signature: (q.accepted_signature as string | null) ?? null } : null)
         { const tt = (q.title as string) ?? ''; const clean = /^untitled quote$/i.test(tt.trim()) ? '' : tt; setTitle(clean); titleRef.current = clean }
@@ -1422,7 +1412,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
     } catch {
       /* automation failure must not interrupt the quote flow */
     }
-    setShowWhatsNext(true)
+    router.push(`/dashboard/money/orders/${id}`)
   }
 
   async function handleCreateProjectFromQuote() {
@@ -1546,7 +1536,7 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (!authReady || !dataLoaded) {
+  if (!authReady || !dataLoaded || toOrder) {
     return (
       <div className="flex items-center justify-center h-64 gap-2 text-text-secondary text-[13px]">
         <span className="material-icons animate-spin text-primary text-[20px]">refresh</span>
@@ -1677,9 +1667,10 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
               : quoteId ? <>Saved{saveState === 'saved' ? ' just now' : ''} · saves by itself</> : 'Saves by itself once there’s a customer or a line'}
           </span>
         </div>
-        {status === 'accepted' && (
-          <button type="button" onClick={() => { setActionError(null); setShowWhatsNext(true) }}
-            className="h-9 px-4 rounded-[10px] bg-[#2563EB] text-white text-[13px] font-semibold hover:bg-[#1D4ED8]">What&apos;s next?</button>
+        {status === 'accepted' && quoteId && (
+          <Link href={`/dashboard/money/orders/${quoteId}`}
+            className="ml-auto h-9 px-4 rounded-[10px] bg-[#2563EB] text-white text-[13px] font-semibold hover:bg-[#1D4ED8] inline-flex items-center gap-1.5">
+            <span className="material-icons !text-[17px]">assignment_turned_in</span>Open the order</Link>
         )}
         {/* Once it has gone to the client: say what they decided, in plain sight (no hidden menu). */}
         {(status === 'sent' || status === 'draft') && quoteId && (
@@ -1697,57 +1688,6 @@ export default function SimpleQuoteBuilder({ quoteId: initialQuoteId }: Props) {
       </div>
 
       <div className={cn('max-w-[1320px] mx-auto px-4 sm:px-7 pt-5 pb-28 md:pb-12 flex flex-col gap-[18px]')}>
-
-        {status === 'accepted' && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-emerald-200 bg-emerald-50 px-5 py-4">
-            <div className="flex items-center gap-3">
-              <span className="w-10 h-10 rounded-full bg-emerald-500 text-white flex items-center justify-center shrink-0"><span className="material-icons text-[20px]">check</span></span>
-              <div>
-                <p className="text-[14.5px] font-semibold text-emerald-900">Quote accepted{clientName ? ` by ${clientName}` : ''}</p>
-                <p className="text-[12.5px] text-emerald-800">It&apos;s now an order. See everything for it in one place: invoices, payments, purchasing and credit notes.</p>
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              {outsourcedLines.some(l => l.supplierId) && quoteId && (
-                <button type="button" disabled={actionBusy || processBusy}
-                  onClick={async () => { setProcessBusy(true); setActionError(null); const r = await processOrder(createClient(), quoteId); setProcessBusy(false); if (!r.ok) { setActionError(r.message); return }; router.push(`/dashboard/money/orders/${quoteId}?tab=pos`) }}
-                  className="h-11 px-5 rounded-xl bg-[#2563EB] text-white text-[14px] font-semibold flex items-center gap-2 hover:bg-[#1D4ED8] disabled:opacity-60">
-                  <span className="material-icons text-[18px]">local_shipping</span>{processBusy ? 'Creating POs…' : 'Process order'}
-                </button>
-              )}
-              <Link href={`/dashboard/money/orders/${quoteId}`} className="h-11 px-5 rounded-xl border border-emerald-300 bg-white text-emerald-800 text-[14px] font-semibold flex items-center gap-2 hover:bg-emerald-100">
-                <span className="material-icons text-[18px]">assignment_turned_in</span>Open order
-              </Link>
-              <button type="button" disabled={actionBusy} onClick={() => void handleCreateInvoiceFromQuote()}
-                className="h-11 px-5 rounded-xl bg-emerald-600 text-white text-[14px] font-semibold flex items-center gap-2 hover:bg-emerald-700 disabled:opacity-60">
-                <span className="material-icons text-[18px]">receipt_long</span>{actionBusy ? 'Opening…' : openInvoiceId ? 'Open invoice' : 'Create invoice'}
-              </button>
-            </div>
-          </div>
-        )}
-
-        {status === 'accepted' && (locked ? (
-          confirmUnlock ? (
-            <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 space-y-2">
-              <p className="text-[13px] font-semibold text-amber-900">Change an accepted quote?</p>
-              <p className="text-[12.5px] text-amber-900">The client accepted this quote as it is. Changes are saved on the quote only: {openInvoiceId ? 'its invoice is not changed, so check the invoice too' : 'the invoice made from it later will use the changes'}, and the client isn&apos;t told.</p>
-              <div className="flex gap-2">
-                <button type="button" onClick={() => setConfirmUnlock(false)} className="h-8 px-3 rounded-lg border border-amber-300 bg-white text-[12.5px] text-amber-900 font-medium">Keep it locked</button>
-                <button type="button" onClick={() => { setUnlocked(true); setConfirmUnlock(false) }} className="h-8 px-3 rounded-lg bg-amber-600 text-white text-[12.5px] font-semibold">Make changes</button>
-              </div>
-            </div>
-          ) : (
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-divider bg-surface px-4 py-2">
-              <p className="text-[12.5px] text-text-secondary flex items-center gap-1.5"><span className="material-icons !text-[15px] !leading-none">lock</span>Locked: this quote is an order now, so its lines, prices and client can&apos;t be changed by accident.</p>
-              <button type="button" onClick={() => setConfirmUnlock(true)} className="h-7 px-3 rounded-lg border border-divider bg-surface text-[12px] font-medium text-text-primary hover:bg-surface-elevated">Make changes</button>
-            </div>
-          )
-        ) : (
-          <p className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-2 text-[12.5px] text-amber-900 flex items-center gap-1.5">
-            <span className="material-icons !text-[15px] !leading-none">edit</span>You&apos;re changing an accepted quote. {openInvoiceId ? 'Its invoice is not changed: check it too.' : ''}
-            <button type="button" onClick={() => setUnlocked(false)} className="ml-auto h-7 px-3 rounded-lg border border-amber-300 bg-white text-[12px] font-medium">Lock again</button>
-          </p>
-        ))}
 
         {sentNote && !actionError && (
           <p className="text-[12.5px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 flex items-start gap-2">

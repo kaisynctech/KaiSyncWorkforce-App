@@ -1,9 +1,10 @@
 'use client'
 
 /**
- * One order (an accepted quote) with everything done for it in one place:
- *  Overview · Items · Purchase orders · Goods received · Invoices · Payments · Credit notes · RFQs & bills.
- * A service-only order has no purchase orders or goods received tabs (board 8).
+ * One order (an accepted quote) with everything done for it in one place.
+ * A small "what's next" card with one button, then three tabs:
+ *  What was sold · Invoices & payments (with credit notes) · Buying in (purchase orders, goods received, RFQs, bills).
+ * A service-only order with nothing bought in has no Buying in tab.
  * The id in the address is the quote's id.
  */
 
@@ -20,6 +21,8 @@ import { createInvoiceFromQuote, createPartInvoiceFromQuote } from '@/lib/money/
 import { createSupplyRfqFromQuote } from '@/lib/supply-rfq'
 import { ORDER_STATE, orderMoney, type OrderInvoice } from '@/lib/money/orders'
 import { cn } from '@/lib/utils'
+import { createJob } from '@/lib/jobs'
+import { createProject } from '@/lib/projects'
 import { isServiceOnly, lineSupply, processOrder, type OrderPoLine, type SupplyMode } from '@/lib/money/order-supply'
 import { GoodsReceivedPanel, PurchaseOrdersPanel, type SupplyBill, type SupplyGrn, type SupplyGrnLine, type SupplyPo } from '@/components/money/OrderSupply'
 
@@ -27,6 +30,7 @@ type Quote = {
   id: string; company_id: string; quote_number: string | null; title: string | null; status: string; currency: string | null
   subtotal: number | null; vat_amount: number | null; total_amount: number | null; cost_total: number | null
   gross_profit: number | null; gross_margin_percent: number | null; accepted_at: string | null; valid_until: string | null
+  accepted_by_name: string | null
   client_id: string | null; job_id: string | null; deal_id: string | null
   clients?: { name: string } | null
   jobs?: { job_code: string | null; title: string | null } | null
@@ -46,7 +50,16 @@ type Grn = SupplyGrn
 type Bill = SupplyBill & { subtotal: number | null; amount_paid: number | null; balance_due: number | null; due_date: string | null }
 type Payout = { id: string; payout_status: string | null; total_amount: number | null; subtotal: number | null; payout_date: string | null; remittance_number: string | null; contractor?: { name: string } | null }
 
-type Tab = 'overview' | 'items' | 'pos' | 'received' | 'invoices' | 'payments' | 'credits' | 'purchasing'
+type Tab = 'sold' | 'money' | 'buying'
+type BuyTab = 'pos' | 'received' | 'other'
+/** Old links (?tab=invoices, ?tab=pos …) still land on the right tab. */
+function tabFrom(v: string | null): { tab: Tab; buy: BuyTab } {
+  if (v === 'invoices' || v === 'payments' || v === 'credits' || v === 'money') return { tab: 'money', buy: 'pos' }
+  if (v === 'pos' || v === 'buying') return { tab: 'buying', buy: 'pos' }
+  if (v === 'received') return { tab: 'buying', buy: 'received' }
+  if (v === 'purchasing') return { tab: 'buying', buy: 'other' }
+  return { tab: 'sold', buy: 'pos' }
+}
 
 const fmtDay = (d: string | null | undefined) => (d ? new Date(d).toLocaleDateString('en-ZA', { day: '2-digit', month: 'short', year: 'numeric' }) : '—')
 const label = (s: string | null | undefined) => String(s ?? '—').replace(/_/g, ' ')
@@ -83,7 +96,8 @@ export default function OrderPage() {
   const { id } = useParams<{ id: string }>()
   const sp = useSearchParams()
   const router = useRouter()
-  const [tab, setTab] = useState<Tab>((sp.get('tab') as Tab) || 'overview')
+  const [tab, setTab] = useState<Tab>(() => tabFrom(sp.get('tab')).tab)
+  const [buyTab, setBuyTab] = useState<BuyTab>(() => tabFrom(sp.get('tab')).buy)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -118,7 +132,7 @@ export default function OrderPage() {
     setEmployeeId(member.employeeId)
     const cid = member.companyId
     const { data: q, error: qErr } = await supabase.from('commercial_quotes')
-      .select('id, company_id, quote_number, title, status, currency, subtotal, vat_amount, total_amount, cost_total, gross_profit, gross_margin_percent, accepted_at, valid_until, client_id, job_id, deal_id, clients(name), jobs!commercial_quotes_job_id_fkey(job_code, title), client_deals!commercial_quotes_deal_id_fkey(project_code, title)')
+      .select('id, company_id, quote_number, title, status, currency, subtotal, vat_amount, total_amount, cost_total, gross_profit, gross_margin_percent, accepted_at, accepted_by_name, valid_until, client_id, job_id, deal_id, clients(name), jobs!commercial_quotes_job_id_fkey(job_code, title), client_deals!commercial_quotes_deal_id_fkey(project_code, title)')
       .eq('id', id).eq('company_id', cid).maybeSingle()
     if (qErr || !q) { setError(qErr?.message ?? 'Order not found.'); setLoading(false); return }
     const qq = q as unknown as Quote
@@ -204,7 +218,7 @@ export default function OrderPage() {
   function startInvoice() {
     const draft = invoices.find(i => String(i.status) === 'draft')
     if (draft) { router.push(`/dashboard/money/invoices/${draft.id}`); return }
-    if (money.toInvoice <= 0.01 && invoices.some(i => !['voided', 'cancelled'].includes(String(i.status)))) { setTab('invoices'); return }
+    if (money.toInvoice <= 0.01 && invoices.some(i => !['voided', 'cancelled'].includes(String(i.status)))) { setTab('money'); return }
     setInvoicePanel(true)
   }
   async function createInvoice() {
@@ -226,8 +240,22 @@ export default function OrderPage() {
     setNote(r.created.length
       ? `Made ${r.created.map(c => c.po_number).join(', ')}. Check them, then Send all.`
       : 'Nothing new to put on a purchase order.')
-    setTab('pos')
+    setTab('buying'); setBuyTab('pos')
     await load()
+  }
+  /** Link the order to a new job or project (what "What's next?" used to offer after accepting). */
+  async function makeJobOrProject(kind: 'job' | 'project') {
+    if (!companyId || !quote) return
+    setBusy(kind); setError(null)
+    const supabase = createClient()
+    const title = quote.title?.trim() || quote.quote_number || (kind === 'job' ? 'Job from order' : 'Project from order')
+    const r = kind === 'job'
+      ? await createJob(supabase, { companyId, title, clientId: quote.client_id, dealId: quote.deal_id, createdByEmployeeId: employeeId, assignCode: true, status: 'open' })
+      : await createProject(supabase, { companyId, title, clientId: quote.client_id, status: 'in_progress', assignCode: true, notes: null })
+    if (!r.ok) { setBusy(null); setError(r.message); return }
+    await supabase.from('commercial_quotes').update(kind === 'job' ? { job_id: r.data.id } : { deal_id: r.data.id }).eq('id', quote.id).eq('company_id', companyId)
+    setBusy(null)
+    router.push(kind === 'job' ? `/dashboard/jobs/${r.data.id}` : `/dashboard/projects/${r.data.id}`)
   }
   async function createRfq() {
     if (!companyId || !quote) return
@@ -253,65 +281,108 @@ export default function OrderPage() {
   const canProcess = !notAccepted && [...supply.values()].some(x => x.key === 'ready')
   const toSource = [...supply.values()].filter(x => x.key === 'to_source').length
   const serviceOnly = isServiceOnly(lines, pos)
-  const TABS: { id: Tab; label: string; count?: number }[] = [
-    { id: 'overview', label: 'Overview' },
-    { id: 'items', label: 'Order items', count: counted.length },
-    ...(serviceOnly ? [] : [
-      { id: 'pos' as Tab, label: 'Purchase orders', count: pos.length },
-      { id: 'received' as Tab, label: 'Goods received', count: grns.filter(g => g.status !== 'cancelled').length },
-    ]),
-    { id: 'invoices', label: 'Invoices', count: invoices.length },
-    { id: 'payments', label: 'Payments', count: payments.length },
-    { id: 'credits', label: 'Credit notes', count: credits.length },
-    ...(serviceOnly && rfqs.length + bills.length + payouts.length === 0 ? [] : [
-      { id: 'purchasing' as Tab, label: 'RFQs & bills', count: rfqs.length + bills.length + payouts.length },
-    ]),
+  const showBuying = !serviceOnly || rfqs.length + bills.length + payouts.length > 0
+  const liveGrns = grns.filter(g => g.status !== 'cancelled')
+  const sentInvoices = invoices.filter(i => !['voided', 'cancelled', 'draft'].includes(String(i.status)))
+  const posToSend = pos.filter(p => p.status === 'approved' && !p.sent_at)
+  const TABS: { id: Tab; label: string; short: string; icon: string; count: number }[] = [
+    { id: 'sold', label: 'What was sold', short: 'Sold', icon: 'inventory_2', count: counted.length },
+    { id: 'money', label: 'Invoices & payments', short: 'Invoices', icon: 'receipt_long', count: invoices.length + payments.length + credits.length },
+    ...(showBuying ? [{ id: 'buying' as Tab, label: 'Buying in', short: 'Buying in', icon: 'local_shipping', count: pos.length + liveGrns.length + rfqs.length + bills.length + payouts.length }] : []),
+  ]
+  const BUY_TABS: { id: BuyTab; label: string; count: number }[] = [
+    { id: 'pos', label: 'Purchase orders', count: pos.length },
+    { id: 'received', label: 'Goods received', count: liveGrns.length },
+    { id: 'other', label: 'Supplier prices & bills', count: rfqs.length + bills.length + payouts.length },
   ]
 
+  // ── What's next: one sentence, one button ──
+  const owingInvoice = sentInvoices.find(i => (Number(i.balance_due) || 0) > 0.004)
+  const draftInvoice = invoices.find(i => String(i.status) === 'draft')
+  const paidPct = money.value > 0 ? Math.min(100, Math.round((money.paid / money.value) * 100)) : 0
+  type Next = { tone: 'amber' | 'blue' | 'green'; icon: string; title: string; sub: string; action?: { label: string; href?: string; onClick?: () => void } }
+  const next: Next | null = notAccepted ? null
+    : draftInvoice ? { tone: 'blue', icon: 'edit_note', title: 'An invoice is ready to check and send', sub: `${draftInvoice.invoice_number ?? 'Draft'} · ${formatCurrency(Number(draftInvoice.total_amount) || 0, cur)}`, action: { label: 'Open invoice', href: `/dashboard/money/invoices/${draftInvoice.id}` } }
+    : money.state === 'to_invoice' ? { tone: 'blue', icon: 'receipt_long', title: 'Next: invoice the client', sub: `Nothing invoiced yet · order ${formatCurrency(money.value, cur)}`, action: { label: 'Create invoice', onClick: startInvoice } }
+    : owingInvoice ? { tone: 'amber', icon: 'hourglass_top', title: `Waiting for payment: ${formatCurrency(money.owing, cur)}`, sub: `${formatCurrency(money.paid, cur)} paid of ${formatCurrency(money.value, cur)}`, action: { label: 'Record payment', href: `/dashboard/money/invoices/${owingInvoice.id}?pay=1` } }
+    : money.toInvoice > 0.01 ? { tone: 'blue', icon: 'receipt_long', title: `Next: invoice the rest, ${formatCurrency(money.toInvoice, cur)}`, sub: `${formatCurrency(money.paid, cur)} paid of ${formatCurrency(money.value, cur)}`, action: { label: 'Create invoice', onClick: startInvoice } }
+    : { tone: 'green', icon: 'check_circle', title: 'All paid', sub: `${formatCurrency(money.paid, cur)} received` }
+  const toneCls = {
+    amber: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
+    blue: 'bg-blue-50 text-[#2563EB] dark:bg-blue-950/40 dark:text-blue-300',
+    green: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
+  }
+  const btnCls = 'h-9 px-4 rounded-[10px] bg-[#2563EB] text-white text-[13px] font-semibold hover:bg-[#1D4ED8] disabled:opacity-60 inline-flex items-center justify-center whitespace-nowrap'
+  const chip = 'inline-flex items-center gap-1 h-7 px-2.5 rounded-full border text-[12px] whitespace-nowrap'
+
+  // Team only: one profit line (actual once costs are in, otherwise from the quote's cost prices).
+  const hasActual = profit.actualCost > 0
+  const profitAmt = hasActual ? profit.actualProfit : profit.quotedSell - profit.quotedCost
+  const profitPct = hasActual ? profit.actualMargin : profit.quotedMargin
+  const showProfit = hasActual || profit.quotedCost > 0
+  const subtotal = Number(quote.subtotal) || 0
+  const vat = Number(quote.vat_amount) || 0
 
   return (
     <div className="h-full overflow-y-auto">
       <div className="max-w-6xl mx-auto px-4 py-4 space-y-3">
-        <div className="flex items-start gap-3 flex-wrap">
-          <Link href="/dashboard/money/orders" className="mt-1 text-text-secondary hover:text-text-primary" aria-label="Back to orders">
-            <span className="material-icons text-[20px]">arrow_back</span>
+        {/* ── Header ── */}
+        <div className="flex items-center gap-2.5">
+          <Link href="/dashboard/money/orders" className="w-9 h-9 rounded-[9px] border border-divider text-text-primary flex items-center justify-center shrink-0 hover:bg-surface-elevated" aria-label="Back to orders">
+            <span className="material-icons !text-[20px]">chevron_left</span>
           </Link>
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-[18px] font-semibold text-text-primary">Order {quote.quote_number ?? ''}</h1>
-              <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide ${st.cls}`}>{st.label}</span>
+              <h1 className="text-[17px] sm:text-[18px] font-semibold text-text-primary">Order {quote.quote_number ?? ''}</h1>
+              <span className={`px-2 py-0.5 rounded-full text-[11px] font-semibold ${st.cls}`}>{st.label}</span>
             </div>
             <p className="text-[12.5px] text-text-secondary truncate">
-              {[quote.clients?.name, quote.title].filter(Boolean).join(' · ')}{quote.accepted_at ? ` · accepted ${fmtDay(quote.accepted_at)}` : ''}
+              {[quote.clients?.name, quote.title].filter(Boolean).join(' · ')}
+              {link && <> · <Link href={link.href} className="text-primary hover:underline">{link.text}</Link></>}
             </p>
-            {link && (
-              <Link href={link.href} className="inline-flex items-center gap-1 text-[12px] text-primary hover:underline">
-                <span className="material-icons !text-[14px] !leading-none">{link.icon}</span>{link.text}
-              </Link>
-            )}
           </div>
-          <div className="flex gap-2 flex-wrap w-full sm:w-auto">
-            <Link href={`/dashboard/money/quotes/${quote.id}`} className="btn-outlined h-8 px-3 text-[12px] inline-flex items-center gap-1">
-              <span className="material-icons text-[16px]">request_quote</span>Quote
-            </Link>
-            <button type="button" onClick={startInvoice} disabled={!!busy || notAccepted}
-              className="btn-primary h-8 px-3 text-[12px] inline-flex items-center gap-1 disabled:opacity-50">
-              <span className="material-icons text-[16px]">receipt_long</span>{busy === 'invoice' ? 'Opening…' : money.hasDraft ? 'Open draft invoice' : money.toInvoice > 0.01 ? 'Create invoice' : 'Invoices'}
-            </button>
-          </div>
+          <Link href={`/dashboard/money/quotes/${quote.id}?view=quote&step=4`} className="h-9 px-3 rounded-[10px] border border-divider bg-surface text-[12.5px] font-semibold text-text-primary hover:bg-surface-elevated inline-flex items-center gap-1 shrink-0">
+            <span className="material-icons !text-[16px] text-text-secondary">description</span><span className="hidden sm:inline">View the quote</span><span className="sm:hidden">Quote</span>
+          </Link>
         </div>
 
         {notAccepted && (
-          <p className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          <p className="text-[12px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900">
             This quote is {label(quote.status)}, not accepted, so it isn&apos;t an order yet.
           </p>
         )}
-        {error && <p className="text-[12px] text-error bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</p>}
-        {note && !error && <p className="text-[12.5px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2" role="status">{note}</p>}
-        {canProcess && tab !== 'pos' && (
-          <div className="rounded-xl border border-primary/30 bg-surface px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-            <p className="text-[13px] text-text-primary">The client accepted. Make the purchase orders for the items you buy in.</p>
-            <button type="button" onClick={() => void runProcessOrder()} disabled={processing} className="btn-primary h-10 px-4 text-[13px] disabled:opacity-50">{processing ? 'Creating…' : 'Process order'}</button>
+        {error && <p className="text-[12px] text-error bg-red-50 border border-red-100 rounded-lg px-3 py-2 dark:bg-red-950/40 dark:border-red-900">{error}</p>}
+        {note && !error && <p className="text-[12.5px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900" role="status">{note}</p>}
+
+        {/* ── What's next (small) ── */}
+        {next && (
+          <div className="rounded-xl border border-divider bg-surface px-3 py-2.5 flex items-center gap-3 flex-wrap sm:flex-nowrap">
+            <span className={cn('w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0', toneCls[next.tone])}><span className="material-icons !text-[18px]">{next.icon}</span></span>
+            <div className="flex-1 min-w-0">
+              <p className="text-[13.5px] font-semibold text-text-primary leading-tight">{next.title}</p>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-[11.5px] text-text-secondary whitespace-nowrap">{next.sub}</span>
+                {money.value > 0 && <span className="flex-1 max-w-[180px] h-1.5 rounded-full bg-surface-elevated border border-divider overflow-hidden"><i className="block h-full bg-emerald-500" style={{ width: `${paidPct}%` }} /></span>}
+              </div>
+            </div>
+            {next.action && (next.action.href
+              ? <Link href={next.action.href} className={cn(btnCls, 'w-full sm:w-auto')}>{next.action.label}</Link>
+              : <button type="button" disabled={!!busy} onClick={next.action.onClick} className={cn(btnCls, 'w-full sm:w-auto')}>{busy === 'invoice' ? 'Opening…' : next.action.label}</button>)}
+          </div>
+        )}
+
+        {/* ── Done, and small to-dos ── */}
+        {!notAccepted && (
+          <div className="flex gap-1.5 flex-wrap">
+            <span className={cn(chip, 'border-divider bg-surface text-text-primary')}><span className="material-icons !text-[15px] text-emerald-600">check</span>Accepted{quote.accepted_by_name ? ` & signed by ${quote.accepted_by_name}` : ''}{quote.accepted_at ? `, ${fmtDay(quote.accepted_at)}` : ''}</span>
+            {sentInvoices.length > 0 && <span className={cn(chip, 'border-divider bg-surface text-text-primary')}><span className="material-icons !text-[15px] text-emerald-600">check</span>{sentInvoices.length === 1 ? 'Invoice sent' : `${sentInvoices.length} invoices sent`}</span>}
+            {canProcess && <button type="button" disabled={processing} onClick={() => void runProcessOrder()} className={cn(chip, 'border-[#2563EB]/40 bg-blue-50 text-[#2563EB] font-semibold dark:bg-blue-950/40 dark:text-blue-300')}><span className="material-icons !text-[15px]">local_shipping</span>{processing ? 'Making purchase orders…' : 'To do: process order'}</button>}
+            {posToSend.length > 0 && <button type="button" onClick={() => { setTab('buying'); setBuyTab('pos') }} className={cn(chip, 'border-[#2563EB]/40 bg-blue-50 text-[#2563EB] font-semibold dark:bg-blue-950/40 dark:text-blue-300')}><span className="material-icons !text-[15px]">send</span>To do: send {posToSend.length === 1 ? 'the purchase order' : `${posToSend.length} purchase orders`}</button>}
+            {toSource > 0 && <span className={cn(chip, 'border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900')}>{toSource} item{toSource === 1 ? ' needs' : 's need'} a supplier</span>}
+            {!link && <>
+              <button type="button" disabled={!!busy} onClick={() => void makeJobOrProject('job')} className={cn(chip, 'border-dashed border-divider text-text-secondary hover:text-text-primary')}><span className="material-icons !text-[15px]">add</span>{busy === 'job' ? 'Creating…' : 'Job'}</button>
+              <button type="button" disabled={!!busy} onClick={() => void makeJobOrProject('project')} className={cn(chip, 'border-dashed border-divider text-text-secondary hover:text-text-primary')}><span className="material-icons !text-[15px]">add</span>{busy === 'project' ? 'Creating…' : 'Project'}</button>
+            </>}
           </div>
         )}
 
@@ -358,217 +429,132 @@ export default function OrderPage() {
           )
         })()}
 
-        <div className="flex gap-1 border-b border-divider overflow-x-auto">
-          {TABS.map(t => (
-            <button key={t.id} type="button" onClick={() => { setTab(t.id); setNote(null) }}
-              className={cn('px-3 py-1.5 text-[12.5px] font-medium border-b-2 -mb-px whitespace-nowrap',
-                tab === t.id ? 'border-primary text-primary' : 'border-transparent text-text-secondary hover:text-text-primary')}>
-              {t.label}{t.count != null && <span className="ml-1 opacity-70">({t.count})</span>}
-            </button>
-          ))}
+        {/* ── Tabs: big and clear, so you know where you're going ── */}
+        <div role="tablist" className={cn('grid gap-1.5 p-1.5 rounded-2xl bg-surface-elevated border border-divider', TABS.length === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
+          {TABS.map(t => {
+            const on = tab === t.id
+            return (
+              <button key={t.id} type="button" role="tab" aria-selected={on} onClick={() => { setTab(t.id); setNote(null) }}
+                className={cn('h-11 rounded-xl flex items-center justify-center gap-1.5 px-2 text-[13px] sm:text-[14px] font-semibold transition-colors min-w-0',
+                  on ? 'bg-[#2563EB] text-white shadow-md shadow-blue-600/25' : 'text-text-secondary hover:text-text-primary hover:bg-surface')}>
+                <span className="material-icons !text-[18px] hidden sm:inline">{t.icon}</span>
+                <span className="truncate sm:hidden">{t.short}</span><span className="truncate hidden sm:inline">{t.label}</span>
+                {t.count > 0 && <span className={cn('min-w-[20px] h-5 px-1.5 rounded-full text-[11px] leading-5 text-center', on ? 'bg-white/25 text-white' : 'bg-surface border border-divider text-text-secondary')}>{t.count}</span>}
+              </button>
+            )
+          })}
         </div>
 
-        {tab === 'overview' && (
-          <div className="space-y-3">
-            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-              <Card title="Order value" value={formatCurrency(money.value, cur)} sub="incl. VAT" />
-              <Card title="Invoiced" value={formatCurrency(money.invoiced, cur)} sub={money.hasDraft ? 'plus a draft' : `${invoices.filter(i => !['voided', 'cancelled', 'draft'].includes(String(i.status))).length} sent`} />
-              <Card title="Paid" value={formatCurrency(money.paid, cur)} tone="text-emerald-700" sub={`${payments.length} payment${payments.length === 1 ? '' : 's'}`} />
-              <Card title="Owing" value={formatCurrency(money.owing, cur)} tone={money.owing > 0.004 ? 'text-error' : undefined} />
-              <Card title="Still to invoice" value={formatCurrency(money.toInvoice, cur)} />
-            </div>
+        {/* ── What was sold ── */}
+        {tab === 'sold' && (
+          <div className="space-y-2">
             <div className="rounded-xl border border-divider bg-surface overflow-hidden">
-              <div className="px-4 py-2 border-b border-divider flex items-center gap-1 text-[13px] font-semibold text-text-primary">
-                <span className="material-icons !text-[14px] !leading-none text-text-secondary">lock</span>Profit <span className="font-normal text-[11.5px] text-text-secondary ml-1">only your team sees this · excl. VAT</span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3">
-                <Card title="Quoted cost" value={profit.quotedCost > 0 ? formatCurrency(profit.quotedCost, cur) : '—'} sub={profit.quotedMargin != null ? `margin ${Math.round(profit.quotedMargin * 10) / 10}%` : 'no cost prices on the quote'} />
-                <Card title="Actual cost" value={profit.actualCost > 0 ? formatCurrency(profit.actualCost, cur) : '—'} sub={`${bills.length} supplier bill${bills.length === 1 ? '' : 's'}${payouts.length ? ` · ${payouts.length} payout${payouts.length === 1 ? '' : 's'}` : ''}`} />
-                <Card title={profit.invoicedExVat > 0 ? 'Invoiced (excl. VAT)' : 'Quoted (excl. VAT)'} value={formatCurrency(profit.sellBase, cur)} />
-                <Card title="Actual profit" value={profit.actualCost > 0 ? formatCurrency(profit.actualProfit, cur) : '—'}
-                  tone={profit.actualCost > 0 ? (profit.actualProfit < 0 ? 'text-error' : 'text-emerald-700') : undefined}
-                  sub={profit.actualMargin != null ? `margin ${Math.round(profit.actualMargin * 10) / 10}%` : 'once supplier bills or payouts are in'} />
-              </div>
-              {profit.excluded > 0 && (
-                <p className="px-4 pb-3 -mt-1 text-[11.5px] text-text-secondary">{profit.excluded} cost{profit.excluded === 1 ? ' is' : 's are'} in another currency and not included above.</p>
-              )}
+              <ResponsiveDataView table={
+                <table className="w-full">
+                  <thead><tr className="bg-surface-elevated border-b border-divider">
+                    <th className={`${MONEY_TH} text-left w-full`}>Item</th>
+                    <th className={`${MONEY_TH} text-right`}>Qty</th>
+                    <th className={`${MONEY_TH} text-right`}>Price</th>
+                    <th className={`${MONEY_TH} text-right`}>Total</th>
+                    <th className={`${MONEY_TH} text-right hidden sm:table-cell !text-amber-700 dark:!text-amber-300`} title="Only your team sees this">Cost</th>
+                    <th className={`${MONEY_TH} text-right hidden sm:table-cell !text-amber-700 dark:!text-amber-300`} title="Only your team sees this">Margin</th>
+                    {!serviceOnly && <th className={`${MONEY_TH} text-left hidden md:table-cell`}>Supplier · PO</th>}
+                    {!serviceOnly && <th className={`${MONEY_TH} text-left hidden sm:table-cell`}>Status</th>}
+                  </tr></thead>
+                  <tbody>
+                    {counted.length === 0 && <tr><td colSpan={8}><Empty text="No lines on this order." /></td></tr>}
+                    {counted.map(l => {
+                      const x = supply.get(l.id)!
+                      const supplierName = x.po ? pos.find(p => p.id === x.po!.id)?.supplier?.name : null
+                      const sell = Number(l.subtotal_sell) || 0
+                      const qty = Number(l.quantity ?? 0)
+                      const costTotal = (Number(l.cost_price) || 0) * qty
+                      const m = costTotal > 0 && sell > 0 ? ((sell - costTotal) / sell) * 100 : null
+                      return (
+                        <tr key={l.id} className="border-b border-divider">
+                          <td className={`${MONEY_TD} text-text-primary !whitespace-normal font-medium`}>
+                            {l.description || '—'}
+                            {!serviceOnly && <span className={cn('sm:hidden ml-1.5 inline-block text-[10px] font-semibold rounded-full px-1.5 py-px align-middle', x.cls)}>{x.label}</span>}
+                          </td>
+                          <td className={`${MONEY_TD} text-right tabular-nums`}>{qty} {l.unit && l.unit !== 'each' ? l.unit : ''}</td>
+                          <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(Number(l.unit_sell_price) || 0, cur)}</td>
+                          <td className={`${MONEY_TD} text-right tabular-nums font-semibold text-text-primary`}>{formatCurrency(sell, cur)}</td>
+                          <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary hidden sm:table-cell`}>{costTotal > 0 ? formatCurrency(costTotal, cur) : '—'}</td>
+                          <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary hidden sm:table-cell`}>{m != null ? `${Math.round(m)}%` : '—'}</td>
+                          {!serviceOnly && <td className={`${MONEY_TD} !whitespace-normal hidden md:table-cell`}>{x.po ? <Link className="text-primary hover:underline" href={`/dashboard/supply/purchase-orders/${x.po.id}`}>{[supplierName, x.po.po_number].filter(Boolean).join(' · ')}</Link> : <span className="text-text-secondary">—</span>}</td>}
+                          {!serviceOnly && <td className={`${MONEY_TD} hidden sm:table-cell`}><span className={cn('inline-block text-[11px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap', x.cls)}>{x.label}</span></td>}
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                  <tfoot>
+                    {vat > 0 && <>
+                      <tr><td colSpan={3} className={`${MONEY_TD} text-right text-text-secondary`}>Subtotal</td><td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(subtotal, cur)}</td><td colSpan={4} className="hidden sm:table-cell" /></tr>
+                      <tr><td colSpan={3} className={`${MONEY_TD} text-right text-text-secondary`}>VAT</td><td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(vat, cur)}</td><td colSpan={4} className="hidden sm:table-cell" /></tr>
+                    </>}
+                    <tr className="bg-surface-elevated border-t border-divider">
+                      <td colSpan={3} className={`${MONEY_TD} text-right font-semibold text-text-primary`}>Total{vat > 0 ? ' incl. VAT' : ''}</td>
+                      <td className={`${MONEY_TD} text-right tabular-nums font-bold text-text-primary`}>{formatCurrency(Number(quote.total_amount) || 0, cur)}</td>
+                      <td colSpan={4} className="hidden sm:table-cell" />
+                    </tr>
+                  </tfoot>
+                </table>
+              } />
             </div>
-            <div className="grid sm:grid-cols-2 gap-3">
-              <Section title="Next steps">
-                <ul className="px-4 py-3 space-y-1.5 text-[12.5px] text-text-primary">
-                  {money.state === 'to_invoice' && <li>• Nothing invoiced yet. <button type="button" onClick={startInvoice} className="text-primary hover:underline">Create the invoice</button>.</li>}
-                  {money.hasDraft && <li>• A draft invoice is waiting to be sent. <button type="button" onClick={() => setTab('invoices')} className="text-primary hover:underline">Open invoices</button>.</li>}
-                  {money.owing > 0.004 && <li>• {formatCurrency(money.owing, cur)} is still owing. <button type="button" onClick={() => setTab('invoices')} className="text-primary hover:underline">Record a payment</button> on the invoice when it comes in.</li>}
-                  {money.toInvoice > 0.01 && money.invoiced > 0 && <li>• {formatCurrency(money.toInvoice, cur)} of the order still has to be invoiced.</li>}
-                  {canProcess && <li>• Items with a chosen supplier aren&apos;t ordered yet. <button type="button" onClick={() => void runProcessOrder()} className="text-primary hover:underline">Process order</button>.</li>}
-                  {toSource > 0 && <li>• {toSource} item{toSource === 1 ? ' needs' : 's need'} a supplier: choose on the quote&apos;s Buyout tab.</li>}
-                  {pos.some(p => p.status === 'approved' && !p.sent_at) && <li>• Purchase orders are ready to send. <button type="button" onClick={() => setTab('pos')} className="text-primary hover:underline">Send them</button>.</li>}
-                  {pos.length === 0 && !canProcess && !serviceOnly && <li>• Need to buy anything for this order? <Link href={`/dashboard/supply/purchase-orders/new?quote_id=${quote.id}`} className="text-primary hover:underline">Create a purchase order</Link> from its lines.</li>}
-                  {money.state === 'paid' && <li>• Paid in full.</li>}
-                </ul>
-              </Section>
-              <Section title="Documents">
-                <ul className="px-4 py-3 space-y-1 text-[12.5px]">
-                  <li className="flex justify-between gap-2"><span className="text-text-secondary">Quote</span><Link className="text-primary hover:underline" href={`/dashboard/money/quotes/${quote.id}`}>{quote.quote_number}</Link></li>
-                  {invoices.map(i => (
-                    <li key={i.id} className="flex justify-between gap-2"><span className="text-text-secondary">Invoice · {label(i.status)}</span><Link className="text-primary hover:underline" href={`/dashboard/money/invoices/${i.id}`}>{i.invoice_number ?? 'Draft'}</Link></li>
-                  ))}
-                  {credits.map(c => (
-                    <li key={c.id} className="flex justify-between gap-2"><span className="text-text-secondary">Credit note</span><Link className="text-primary hover:underline" href={`/dashboard/money/credit-notes/${c.id}`}>{c.credit_note_number ?? 'Credit note'}</Link></li>
-                  ))}
-                  {pos.map(p => (
-                    <li key={p.id} className="flex justify-between gap-2"><span className="text-text-secondary">Purchase order · {p.supplier?.name ?? ''}</span><Link className="text-primary hover:underline" href={`/dashboard/supply/purchase-orders/${p.id}`}>{p.po_number ?? 'PO'}</Link></li>
-                  ))}
-                </ul>
-              </Section>
-            </div>
+            {showProfit && (
+              <div className="rounded-xl px-3.5 py-2 bg-amber-50 text-amber-900 border border-amber-200 dark:bg-amber-950/40 dark:text-amber-200 dark:border-amber-900 flex items-center justify-between gap-2 text-[12.5px] font-semibold">
+                <span className="flex items-center gap-1.5 min-w-0"><span className="material-icons !text-[15px]">lock</span><span className="truncate">Your profit{hasActual ? '' : ' (from the quote)'}<span className="hidden sm:inline font-normal opacity-80"> · only your team sees this</span></span></span>
+                <span className="tabular-nums whitespace-nowrap">{formatCurrency(profitAmt, cur)}{profitPct != null ? ` · ${Math.round(profitPct)}%` : ''}</span>
+              </div>
+            )}
+            {profit.excluded > 0 && <p className="text-[11.5px] text-text-secondary">{profit.excluded} cost{profit.excluded === 1 ? ' is' : 's are'} in another currency and not counted in the profit.</p>}
           </div>
         )}
 
-        {tab === 'items' && (
-          <Section title="Order items" action={!serviceOnly ? <Link href={`/dashboard/supply/purchase-orders/new?quote_id=${quote.id}`} className="text-[11.5px] text-primary hover:underline">Make a PO by hand</Link> : undefined}>
-            <ResponsiveDataView table={
-              <table className="w-full" style={{ minWidth: 820 }}>
-                <thead><tr className="bg-surface-elevated border-b border-divider">
-                  <th className={`${MONEY_TH} text-left`}>Item</th>
-                  {!serviceOnly && <th className={`${MONEY_TH} text-left`}>Source</th>}
-                  {!serviceOnly && <th className={`${MONEY_TH} text-left`}>Supplier · PO</th>}
-                  <th className={`${MONEY_TH} text-right`}>Qty</th>
-                  {!serviceOnly && <th className={`${MONEY_TH} text-right`}>Received</th>}
-                  <th className={`${MONEY_TH} text-right`}>Price</th>
-                  <th className={`${MONEY_TH} text-right`}>Total</th>
-                  <th className={`${MONEY_TH} text-right`} title="Only your team sees this">Cost</th>
-                  <th className={`${MONEY_TH} text-left`}>Status</th>
-                </tr></thead>
-                <tbody>
-                  {counted.map(l => {
-                    const x = supply.get(l.id)!
-                    const supplierName = x.po ? pos.find(p => p.id === x.po!.id)?.supplier?.name : null
-                    return (
-                      <tr key={l.id} className="border-b border-divider last:border-0">
-                        <td className={`${MONEY_TD} text-text-primary whitespace-normal font-medium`}>{l.description || '—'}</td>
-                        {!serviceOnly && <td className={`${MONEY_TD} text-text-secondary`}>{x.source}</td>}
-                        {!serviceOnly && <td className={`${MONEY_TD} whitespace-normal`}>{x.po ? <Link className="text-primary hover:underline" href={`/dashboard/supply/purchase-orders/${x.po.id}`}>{[supplierName, x.po.po_number].filter(Boolean).join(' · ')}</Link> : <span className="text-text-secondary">—</span>}</td>}
-                        <td className={`${MONEY_TD} text-right tabular-nums`}>{Number(l.quantity ?? 0)} {l.unit && l.unit !== 'each' ? l.unit : ''}</td>
-                        {!serviceOnly && <td className={`${MONEY_TD} text-right tabular-nums`}>{x.po ? x.received : '—'}</td>}
-                        <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(Number(l.unit_sell_price) || 0, cur)}</td>
-                        <td className={`${MONEY_TD} text-right tabular-nums font-medium`}>{formatCurrency(Number(l.subtotal_sell) || 0, cur)}</td>
-                        <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary`}>{Number(l.cost_price) > 0 ? formatCurrency(Number(l.cost_price), cur) : '—'}</td>
-                        <td className={MONEY_TD}><span className={cn('inline-block text-[11px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap', x.cls)}>{x.label}</span></td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            } />
-            {!serviceOnly && <p className="px-4 py-2 text-[11.5px] text-text-secondary border-t border-divider">Bought-in items go: To source → Ready for PO → On PO → Part received → Received.</p>}
-          </Section>
-        )}
-
-        {tab === 'pos' && companyId && (
-          <PurchaseOrdersPanel companyId={companyId} quoteId={quote.id} pos={pos} poLines={poLines} sendTo={sendTo} toSource={toSource}
-            canProcess={canProcess} processing={processing} onProcess={() => void runProcessOrder()} onChanged={async () => { setNote(null); await load() }} />
-        )}
-
-        {tab === 'received' && (
-          <GoodsReceivedPanel grns={grns} grnLines={grnLines} bills={allBills} pos={pos} onChanged={async () => { setNote(null); await load() }} />
-        )}
-
-        {tab === 'invoices' && (
-          <InvoicesList embedded quoteId={quote.id} onNew={notAccepted || (money.toInvoice <= 0.01 && !money.hasDraft) ? undefined : () => { startInvoice(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-            newLabel={money.hasDraft ? 'Open draft invoice' : 'Create invoice'} />
-        )}
-
-        {tab === 'payments' && (
-          <Section title="Payments received">
-            {payments.length === 0 ? <Empty text="No payments yet. Record a payment on the invoice when the money comes in." /> : (
-              <ResponsiveDataView table={
-                <table className="w-full" style={{ minWidth: 560 }}>
-                  <thead><tr className="bg-surface-elevated border-b border-divider">
-                    <th className={`${MONEY_TH} text-left`}>Date</th>
-                    <th className={`${MONEY_TH} text-left`}>Invoice</th>
-                    <th className={`${MONEY_TH} text-left`}>Receipt</th>
-                    <th className={`${MONEY_TH} text-left`}>Method · reference</th>
-                    <th className={`${MONEY_TH} text-right`}>Amount</th>
-                  </tr></thead>
-                  <tbody>
-                    {payments.map(p => (
-                      <tr key={p.id} className="border-b border-divider last:border-0">
-                        <td className={MONEY_TD}>{fmtDay(p.transaction_date ?? p.created_at)}</td>
-                        <td className={MONEY_TD}><Link className="text-primary hover:underline" href={`/dashboard/money/invoices/${p.source_id}`}>{invNumber.get(p.source_id) ?? 'Invoice'}</Link></td>
-                        <td className={`${MONEY_TD} text-text-secondary`}>{p.receipt_number ?? '—'}</td>
-                        <td className={`${MONEY_TD} text-text-secondary`}>{[label(p.payment_method), p.reference_number].filter(v => v && v !== '—').join(' · ') || '—'}</td>
-                        <td className={`${MONEY_TD} text-right tabular-nums font-medium text-emerald-700`}>{formatCurrency(Number(p.amount) || 0, cur)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              } />
-            )}
-          </Section>
-        )}
-
-        {tab === 'credits' && (
-          <Section title="Credit notes" action={<span className="text-[11.5px] text-text-secondary">Create one from the invoice it is for</span>}>
-            {credits.length === 0 ? <Empty text="No credit notes. To give one, open the invoice and choose Issue credit note." /> : (
-              <ResponsiveDataView table={
-                <table className="w-full" style={{ minWidth: 520 }}>
-                  <thead><tr className="bg-surface-elevated border-b border-divider">
-                    <th className={`${MONEY_TH} text-left`}>Credit note</th>
-                    <th className={`${MONEY_TH} text-left`}>Invoice</th>
-                    <th className={`${MONEY_TH} text-left`}>Date</th>
-                    <th className={`${MONEY_TH} text-left`}>Status</th>
-                    <th className={`${MONEY_TH} text-right`}>Amount</th>
-                  </tr></thead>
-                  <tbody>
-                    {credits.map(c => (
-                      <tr key={c.id} onClick={() => router.push(`/dashboard/money/credit-notes/${c.id}`)} className="border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated">
-                        <td className={`${MONEY_TD} font-mono`}>{c.credit_note_number ?? '—'}</td>
-                        <td className={MONEY_TD}>{c.invoice_id ? invNumber.get(c.invoice_id) ?? '—' : '—'}</td>
-                        <td className={MONEY_TD}>{fmtDay(c.issue_date)}</td>
-                        <td className={MONEY_TD}><span className={pill}>{label(c.status)}</span></td>
-                        <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(Number(c.total_amount) || 0, c.currency ?? cur)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              } />
-            )}
-          </Section>
-        )}
-
-        {tab === 'purchasing' && (
+        {/* ── Invoices & payments ── */}
+        {tab === 'money' && (
           <div className="space-y-3">
-            <Section title="Requests for quotation" action={<button type="button" onClick={() => void createRfq()} disabled={!!busy} className="btn-outlined h-7 px-2.5 text-[11.5px] disabled:opacity-50">{busy === 'rfq' ? 'Opening…' : 'Create RFQ'}</button>}>
-              {rfqs.length === 0 ? <Empty text="No RFQs. Ask suppliers for prices on this order's lines." /> : (
-                <ul className="divide-y divide-divider">
-                  {rfqs.map(r => (
-                    <li key={r.id}><Link href={`/dashboard/supply/rfqs/${r.id}`} className="flex justify-between gap-2 px-4 py-2 text-[12.5px] hover:bg-surface-elevated">
-                      <span><span className="font-mono text-text-secondary mr-2">{r.rfq_number}</span>{r.title}</span><span className={pill}>{label(r.status)}</span>
-                    </Link></li>
-                  ))}
-                </ul>
-              )}
-            </Section>
-            <Section title="Supplier bills">
-              {bills.length === 0 ? <Empty text="No supplier bills linked to this order's purchase orders yet." /> : (
+            <div className="rounded-xl border border-divider bg-surface overflow-hidden">
+              <ResponsiveDataView table={
+                <table className="w-full">
+                  <thead><tr className="bg-surface-elevated border-b border-divider">
+                    <th className={`${MONEY_TH} text-right`}>Order value</th>
+                    <th className={`${MONEY_TH} text-right`}>Invoiced</th>
+                    <th className={`${MONEY_TH} text-right`}>Paid</th>
+                    <th className={`${MONEY_TH} text-right`}>Owing</th>
+                    <th className={`${MONEY_TH} text-right`}>Still to invoice</th>
+                  </tr></thead>
+                  <tbody><tr>
+                    <td className={`${MONEY_TD} text-right tabular-nums font-semibold`}>{formatCurrency(money.value, cur)}</td>
+                    <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(money.invoiced, cur)}</td>
+                    <td className={`${MONEY_TD} text-right tabular-nums text-emerald-700 dark:text-emerald-400`}>{formatCurrency(money.paid, cur)}</td>
+                    <td className={cn(MONEY_TD, 'text-right tabular-nums', money.owing > 0.004 ? 'text-error font-semibold' : '')}>{formatCurrency(money.owing, cur)}</td>
+                    <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(money.toInvoice, cur)}</td>
+                  </tr></tbody>
+                </table>
+              } />
+            </div>
+            <InvoicesList embedded quoteId={quote.id} onNew={notAccepted || (money.toInvoice <= 0.01 && !money.hasDraft) ? undefined : () => { startInvoice(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+              newLabel={money.hasDraft ? 'Open draft invoice' : 'Create invoice'} />
+            <Section title={`Payments received${payments.length ? ` (${payments.length})` : ''}`}>
+              {payments.length === 0 ? <Empty text="No payments yet. Use Record payment when the money comes in." /> : (
                 <ResponsiveDataView table={
-                  <table className="w-full" style={{ minWidth: 560 }}>
+                  <table className="w-full" style={{ minWidth: 520 }}>
                     <thead><tr className="bg-surface-elevated border-b border-divider">
-                      <th className={`${MONEY_TH} text-left`}>Bill</th>
-                      <th className={`${MONEY_TH} text-left`}>For PO</th>
-                      <th className={`${MONEY_TH} text-left`}>Status</th>
-                      <th className={`${MONEY_TH} text-right`}>Total</th>
-                      <th className={`${MONEY_TH} text-right`}>Still to pay</th>
+                      <th className={`${MONEY_TH} text-left`}>Date</th>
+                      <th className={`${MONEY_TH} text-left`}>Invoice</th>
+                      <th className={`${MONEY_TH} text-left`}>Receipt</th>
+                      <th className={`${MONEY_TH} text-left`}>Method · reference</th>
+                      <th className={`${MONEY_TH} text-right`}>Amount</th>
                     </tr></thead>
                     <tbody>
-                      {bills.map(b => (
-                        <tr key={b.id} onClick={() => router.push(`/dashboard/finance/supplier-invoices/${b.id}`)} className="border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated">
-                          <td className={`${MONEY_TD} font-mono`}>{b.invoice_number ?? b.bill_number ?? '—'}</td>
-                          <td className={MONEY_TD}>{b.po_id ? poNumber.get(b.po_id) : '—'}</td>
-                          <td className={MONEY_TD}><span className={pill}>{label(b.status)}</span></td>
-                          <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(Number(b.total_amount) || 0, b.currency ?? 'ZAR')}</td>
-                          <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(Number(b.balance_due) || 0, b.currency ?? 'ZAR')}</td>
+                      {payments.map(p => (
+                        <tr key={p.id} className="border-b border-divider last:border-0">
+                          <td className={MONEY_TD}>{fmtDay(p.transaction_date ?? p.created_at)}</td>
+                          <td className={MONEY_TD}><Link className="text-primary hover:underline" href={`/dashboard/money/invoices/${p.source_id}`}>{invNumber.get(p.source_id) ?? 'Invoice'}</Link></td>
+                          <td className={`${MONEY_TD} text-text-secondary`}>{p.receipt_number ?? '—'}</td>
+                          <td className={`${MONEY_TD} text-text-secondary`}>{[label(p.payment_method), p.reference_number].filter(v => v && v !== '—').join(' · ') || '—'}</td>
+                          <td className={`${MONEY_TD} text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-400`}>{formatCurrency(Number(p.amount) || 0, cur)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -576,19 +562,124 @@ export default function OrderPage() {
                 } />
               )}
             </Section>
-            {(payouts.length > 0 || quote.job_id) && (
-              <Section title="Contractor payouts">
-                {payouts.length === 0 ? <Empty text="No contractor payouts for this order's job." /> : (
-                  <ul className="divide-y divide-divider">
-                    {payouts.map(p => (
-                      <li key={p.id} className="flex justify-between gap-2 px-4 py-2 text-[12.5px]">
-                        <span>{p.contractor?.name ?? 'Contractor'}{p.remittance_number ? ` · ${p.remittance_number}` : ''} · {fmtDay(p.payout_date)}</span>
-                        <span className="flex items-center gap-2"><span className={pill}>{label(p.payout_status)}</span><span className="tabular-nums">{formatCurrency(Number(p.total_amount) || 0, 'ZAR')}</span></span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
+            {credits.length > 0 && (
+              <Section title={`Credit notes (${credits.length})`}>
+                <ResponsiveDataView table={
+                  <table className="w-full" style={{ minWidth: 520 }}>
+                    <thead><tr className="bg-surface-elevated border-b border-divider">
+                      <th className={`${MONEY_TH} text-left`}>Credit note</th>
+                      <th className={`${MONEY_TH} text-left`}>Invoice</th>
+                      <th className={`${MONEY_TH} text-left`}>Date</th>
+                      <th className={`${MONEY_TH} text-left`}>Status</th>
+                      <th className={`${MONEY_TH} text-right`}>Amount</th>
+                    </tr></thead>
+                    <tbody>
+                      {credits.map(c => (
+                        <tr key={c.id} onClick={() => router.push(`/dashboard/money/credit-notes/${c.id}`)} className="border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated">
+                          <td className={`${MONEY_TD} font-mono`}>{c.credit_note_number ?? '—'}</td>
+                          <td className={MONEY_TD}>{c.invoice_id ? invNumber.get(c.invoice_id) ?? '—' : '—'}</td>
+                          <td className={MONEY_TD}>{fmtDay(c.issue_date)}</td>
+                          <td className={MONEY_TD}><span className={pill}>{label(c.status)}</span></td>
+                          <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(Number(c.total_amount) || 0, c.currency ?? cur)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                } />
               </Section>
+            )}
+          </div>
+        )}
+
+        {/* ── Buying in ── */}
+        {tab === 'buying' && (
+          <div className="space-y-3">
+            <div className="flex gap-1.5 overflow-x-auto">
+              {BUY_TABS.map(b => (
+                <button key={b.id} type="button" onClick={() => setBuyTab(b.id)}
+                  className={cn('h-8 px-3 rounded-full border text-[12.5px] font-semibold whitespace-nowrap',
+                    buyTab === b.id ? 'border-[#2563EB] bg-blue-50 text-[#2563EB] dark:bg-blue-950/40 dark:text-blue-300' : 'border-divider bg-surface text-text-secondary hover:text-text-primary')}>
+                  {b.label}{b.count > 0 ? ` (${b.count})` : ''}
+                </button>
+              ))}
+            </div>
+            {buyTab === 'pos' && companyId && (
+              <PurchaseOrdersPanel companyId={companyId} quoteId={quote.id} pos={pos} poLines={poLines} sendTo={sendTo} toSource={toSource}
+                canProcess={canProcess} processing={processing} onProcess={() => void runProcessOrder()} onChanged={async () => { setNote(null); await load() }} />
+            )}
+            {buyTab === 'received' && (
+              <GoodsReceivedPanel grns={grns} grnLines={grnLines} bills={allBills} pos={pos} onChanged={async () => { setNote(null); await load() }} />
+            )}
+            {buyTab === 'other' && (
+              <>
+                <Section title="Prices asked from suppliers (RFQs)" action={<button type="button" onClick={() => void createRfq()} disabled={!!busy} className="btn-outlined h-7 px-2.5 text-[11.5px] disabled:opacity-50">{busy === 'rfq' ? 'Opening…' : 'Ask for prices'}</button>}>
+                  {rfqs.length === 0 ? <Empty text="None yet." /> : (
+                    <ResponsiveDataView table={
+                      <table className="w-full">
+                        <thead><tr className="bg-surface-elevated border-b border-divider">
+                          <th className={`${MONEY_TH} text-left`}>RFQ</th><th className={`${MONEY_TH} text-left w-full`}>For</th><th className={`${MONEY_TH} text-left`}>Status</th>
+                        </tr></thead>
+                        <tbody>
+                          {rfqs.map(r => (
+                            <tr key={r.id} onClick={() => router.push(`/dashboard/supply/rfqs/${r.id}`)} className="border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated">
+                              <td className={`${MONEY_TD} font-mono`}>{r.rfq_number ?? '—'}</td><td className={`${MONEY_TD} !whitespace-normal`}>{r.title ?? '—'}</td><td className={MONEY_TD}><span className={pill}>{label(r.status)}</span></td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    } />
+                  )}
+                </Section>
+                <Section title="Supplier bills">
+                  {bills.length === 0 ? <Empty text="No supplier bills for this order's purchase orders yet." /> : (
+                    <ResponsiveDataView table={
+                      <table className="w-full" style={{ minWidth: 520 }}>
+                        <thead><tr className="bg-surface-elevated border-b border-divider">
+                          <th className={`${MONEY_TH} text-left`}>Bill</th>
+                          <th className={`${MONEY_TH} text-left`}>For PO</th>
+                          <th className={`${MONEY_TH} text-left`}>Status</th>
+                          <th className={`${MONEY_TH} text-right`}>Total</th>
+                          <th className={`${MONEY_TH} text-right`}>Still to pay</th>
+                        </tr></thead>
+                        <tbody>
+                          {bills.map(b => (
+                            <tr key={b.id} onClick={() => router.push(`/dashboard/finance/supplier-invoices/${b.id}`)} className="border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated">
+                              <td className={`${MONEY_TD} font-mono`}>{b.invoice_number ?? b.bill_number ?? '—'}</td>
+                              <td className={MONEY_TD}>{b.po_id ? poNumber.get(b.po_id) : '—'}</td>
+                              <td className={MONEY_TD}><span className={pill}>{label(b.status)}</span></td>
+                              <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(Number(b.total_amount) || 0, b.currency ?? 'ZAR')}</td>
+                              <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(Number(b.balance_due) || 0, b.currency ?? 'ZAR')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    } />
+                  )}
+                </Section>
+                {(payouts.length > 0 || quote.job_id) && (
+                  <Section title="Contractor payouts">
+                    {payouts.length === 0 ? <Empty text="No contractor payouts for this order's job." /> : (
+                      <ResponsiveDataView table={
+                        <table className="w-full" style={{ minWidth: 480 }}>
+                          <thead><tr className="bg-surface-elevated border-b border-divider">
+                            <th className={`${MONEY_TH} text-left`}>Contractor</th><th className={`${MONEY_TH} text-left`}>Date</th><th className={`${MONEY_TH} text-left`}>Status</th><th className={`${MONEY_TH} text-right`}>Amount</th>
+                          </tr></thead>
+                          <tbody>
+                            {payouts.map(p => (
+                              <tr key={p.id} className="border-b border-divider last:border-0">
+                                <td className={MONEY_TD}>{p.contractor?.name ?? 'Contractor'}{p.remittance_number ? ` · ${p.remittance_number}` : ''}</td>
+                                <td className={MONEY_TD}>{fmtDay(p.payout_date)}</td>
+                                <td className={MONEY_TD}><span className={pill}>{label(p.payout_status)}</span></td>
+                                <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(Number(p.total_amount) || 0, 'ZAR')}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      } />
+                    )}
+                  </Section>
+                )}
+              </>
             )}
           </div>
         )}

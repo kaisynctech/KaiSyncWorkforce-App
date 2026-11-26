@@ -868,7 +868,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                     {pagedSales.map(q => (
                       <tr
                         key={q.id}
-                        onClick={() => router.push(`/dashboard/money/quotes/${q.id}`)}
+                        onClick={() => router.push(q.status === 'accepted' ? `/dashboard/money/orders/${q.id}` : `/dashboard/money/quotes/${q.id}`)}
                         className="bg-surface-card border-b border-divider last:border-0 cursor-pointer hover:bg-surface-elevated transition-colors"
                       >
                         <td className={`${TD} font-mono text-text-secondary whitespace-nowrap`}>{q.quote_number ?? '—'}</td>
@@ -919,7 +919,7 @@ export function QuotesList({ clientId = null, jobId = null, dealId = null, embed
                   {pagedSales.map(q => (
                     <DataCard
                       key={q.id}
-                      onClick={() => router.push(`/dashboard/money/quotes/${q.id}`)}
+                      onClick={() => router.push(q.status === 'accepted' ? `/dashboard/money/orders/${q.id}` : `/dashboard/money/quotes/${q.id}`)}
                     >
                       <div className="flex items-start justify-between gap-2">
                         <div className="min-w-0">
