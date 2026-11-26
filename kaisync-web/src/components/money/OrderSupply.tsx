@@ -166,7 +166,7 @@ export function PurchaseOrdersPanel({ companyId, pos, poLines, sendTo, toSource,
             <table className="w-full" style={{ minWidth: 760 }}>
               <thead><tr className="border-b border-divider">
                 <th className={TH}>PO</th><th className={TH}>Supplier</th><th className={cn(TH, 'w-full min-w-[220px]')}>Items</th>
-                <th className={cn(TH, '!text-right')}>Amount excl. VAT</th><th className={cn(TH, '!text-right')}>Received</th><th className={TH}>Status</th><th className={TH} />
+                <th className={cn(TH, '!text-right')}>Amount excl. VAT</th><th className={cn(TH, '!text-right')}>Received</th><th className={TH}>Status</th><th className={cn(TH, 'sticky right-0 bg-surface')} />
               </tr></thead>
               <tbody>
                 {shown.map(p => {
@@ -188,7 +188,7 @@ export function PurchaseOrdersPanel({ companyId, pos, poLines, sendTo, toSource,
                         <td className={cn(TD, 'text-right tabular-nums font-semibold whitespace-nowrap')}>{formatCurrency(Number(p.subtotal) || 0, p.currency ?? 'ZAR')}</td>
                         <td className={cn(TD, 'text-right tabular-nums whitespace-nowrap')}><b>{q3(received)}</b> of {q3(ordered)}</td>
                         <td className={TD}><span className={cn(pill, st.cls)}>{st.label}</span></td>
-                        <td className={cn(TD, 'whitespace-nowrap text-right')}>
+                        <td className={cn(TD, 'whitespace-nowrap text-right sticky right-0 bg-surface shadow-[-8px_0_8px_-8px_rgba(15,23,42,.15)]')}>
                           {p.status !== 'cancelled' && <span className="inline-flex gap-1.5">
                             {p.status === 'approved' && (
                               <button type="button" className={cn(sm, 'bg-[#2563EB] text-white')} disabled={busy !== null} onClick={async () => {
@@ -424,7 +424,7 @@ export function GoodsReceivedPanel({ grns, grnLines, bills, pos, onChanged }: {
             <table className="w-full" style={{ minWidth: 760 }}>
               <thead><tr className="border-b border-divider">
                 <th className={TH}>Delivery</th><th className={TH}>Date</th><th className={TH}>Supplier · PO</th><th className={TH}>Delivery note</th>
-                <th className={cn(TH, 'w-full min-w-[220px]')}>What arrived</th><th className={TH}>Supplier bill</th><th className={TH} />
+                <th className={cn(TH, 'w-full min-w-[220px]')}>What arrived</th><th className={TH}>Supplier bill</th><th className={cn(TH, 'sticky right-0 bg-surface')} />
               </tr></thead>
               <tbody>
                 {shown.map(g => {
@@ -444,7 +444,7 @@ export function GoodsReceivedPanel({ grns, grnLines, bills, pos, onChanged }: {
                         <td className={cn(TD, 'whitespace-nowrap')}>{g.delivery_note_number || '—'}</td>
                         <td className={TD} title={items.join(', ')}>{items[0] ?? '—'}{items.length > 1 && <span className="text-text-secondary"> +{items.length - 1} more</span>}{g.notes && <span className="block text-[11.5px] text-text-secondary">{g.notes}</span>}</td>
                         <td className={cn(TD, 'whitespace-nowrap')}>{bill && billPill ? <Link href={`/dashboard/finance/supplier-invoices/${bill.id}`} className={cn(pill, billPill.c, 'hover:underline')}>{bill.bill_number ? `${bill.bill_number} · ` : ''}{billPill.t}</Link> : '—'}</td>
-                        <td className={cn(TD, 'whitespace-nowrap text-right')}>
+                        <td className={cn(TD, 'whitespace-nowrap text-right sticky right-0 bg-surface shadow-[-8px_0_8px_-8px_rgba(15,23,42,.15)]')}>
                           {!cancelled && <span className="inline-flex gap-1.5">
                             <button type="button" className={cn(sm, 'border border-divider text-text-primary')} onClick={() => setPanel(isOpen && panel?.kind === 'edit' ? null : { id: g.id, kind: 'edit' })}>Fix note</button>
                             {bill?.approval_status !== 'approved' && <button type="button" className={cn(sm, 'text-error')} onClick={() => setPanel(isOpen && panel?.kind === 'cancel' ? null : { id: g.id, kind: 'cancel' })}>Cancel</button>}
