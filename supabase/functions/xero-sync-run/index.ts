@@ -436,7 +436,16 @@ async function syncPoBill(ctx: Ctx, poId: string) {
 async function syncSupplierBill(ctx: Ctx, id: string) {
   const { data: si } = await ctx.admin.from('supplier_invoices').select('*').eq('id', id).maybeSingle()
   if (!si) throw new Skip('Deleted in KaiSync')
-  if (si.approval_status !== 'approved' || si.status === 'cancelled') throw new Skip('Not approved')
+  if (si.status === 'cancelled') {
+    // Cancelled in KaiSync (e.g. its purchase order was cancelled before anything was paid): void it in Xero.
+    const link = await docLink(ctx, 'supplier_bill', id)
+    if (!link) throw new Skip('Cancelled before it went to Xero')
+    const v = await xero(ctx.token, '/Invoices', { method: 'POST', body: JSON.stringify({ Invoices: [{ InvoiceID: link.xero_id, Status: 'VOIDED' }] }) })
+    if (!v.ok) throw new Error(`Could not void it in Xero: ${v.error}. If it has payments in Xero, remove them there first.`)
+    await saveDocLink(ctx, 'supplier_bill', id, link.xero_id, link.xero_number ?? null, 'VOIDED')
+    return
+  }
+  if (si.approval_status !== 'approved') throw new Skip('Not approved')
   if (!si.supplier_id) throw new Error('This supplier invoice has no supplier.')
   const { data: lines } = await ctx.admin.from('supplier_invoice_lines').select('*').eq('invoice_id', id).order('line_no')
   let target = await docLink(ctx, 'supplier_bill', id)
@@ -459,6 +468,23 @@ async function syncSupplierBill(ctx: Ctx, id: string) {
 
 async function syncSupplierPayment(ctx: Ctx, id: string) {
   if (await docLink(ctx, 'supplier_payment', id)) return
+  // Each payment to a supplier (deposit, part payment, the rest) is its own Xero payment: the job's id is the payment.
+  const { data: tx } = await ctx.admin.from('finance_transactions').select('*').eq('id', id).maybeSingle()
+  if (tx) {
+    if (tx.transaction_type !== 'supplier_payment' || tx.source_table !== 'supplier_invoices') throw new Skip('Not a supplier payment')
+    let bill = await docLink(ctx, 'supplier_bill', tx.source_id)
+    if (!bill) { await syncSupplierBill(ctx, tx.source_id); bill = await docLink(ctx, 'supplier_bill', tx.source_id) }
+    if (!bill) throw new Error('The bill is not in Xero yet.')
+    const r = await xero(ctx.token, '/Payments', { method: 'PUT', body: JSON.stringify({ Payments: [{
+      Invoice: { InvoiceID: bill.xero_id }, Account: bankAccount(ctx),
+      Date: day(tx.transaction_date ?? tx.created_at), Amount: money(tx.amount), Reference: (tx.reference_number ?? '').slice(0, 255) || undefined,
+    }] }) })
+    const x = r.ok ? r.data.Payments?.[0] : null
+    if (!x?.PaymentID) throw new Error(r.error ?? 'Xero did not return the payment')
+    await saveDocLink(ctx, 'supplier_payment', id, x.PaymentID, null, x.Status)
+    return
+  }
+  // Older jobs: the whole bill once it was fully paid.
   const { data: si } = await ctx.admin.from('supplier_invoices').select('*').eq('id', id).maybeSingle()
   if (!si) throw new Skip('Deleted in KaiSync')
   let bill = await docLink(ctx, 'supplier_bill', id)
