@@ -321,6 +321,8 @@ export default function OrderPage() {
   const profitPct = hasActual ? profit.actualMargin : profit.quotedMargin
   const showProfit = hasActual || profit.quotedCost > 0
   const subtotal = Number(quote.subtotal) || 0
+  const anyCost = counted.some(l => Number(l.cost_price) > 0)
+  const teamCol = anyCost ? 'hidden sm:table-cell' : 'hidden'
   const vat = Number(quote.vat_amount) || 0
 
   return (
@@ -453,11 +455,11 @@ export default function OrderPage() {
                 <table className="w-full">
                   <thead><tr className="bg-surface-elevated border-b border-divider">
                     <th className={`${MONEY_TH} text-left w-full`}>Item</th>
-                    <th className={`${MONEY_TH} text-right`}>Qty</th>
-                    <th className={`${MONEY_TH} text-right`}>Price</th>
-                    <th className={`${MONEY_TH} text-right`}>Total</th>
-                    <th className={`${MONEY_TH} text-right hidden sm:table-cell !text-amber-700 dark:!text-amber-300`} title="Only your team sees this">Cost</th>
-                    <th className={`${MONEY_TH} text-right hidden sm:table-cell !text-amber-700 dark:!text-amber-300`} title="Only your team sees this">Margin</th>
+                    <th className={`${MONEY_TH} !text-right`}>Qty</th>
+                    <th className={`${MONEY_TH} !text-right`}>Price</th>
+                    <th className={`${MONEY_TH} !text-right`}>Total</th>
+                    <th className={`${MONEY_TH} !text-right ${teamCol} !text-amber-700 dark:!text-amber-300`} title="Only your team sees this">Cost</th>
+                    <th className={`${MONEY_TH} !text-right ${teamCol} !text-amber-700 dark:!text-amber-300`} title="Only your team sees this">Margin</th>
                     {!serviceOnly && <th className={`${MONEY_TH} text-left hidden md:table-cell`}>Supplier · PO</th>}
                     {!serviceOnly && <th className={`${MONEY_TH} text-left hidden sm:table-cell`}>Status</th>}
                   </tr></thead>
@@ -479,8 +481,8 @@ export default function OrderPage() {
                           <td className={`${MONEY_TD} text-right tabular-nums`}>{qty} {l.unit && l.unit !== 'each' ? l.unit : ''}</td>
                           <td className={`${MONEY_TD} text-right tabular-nums`}>{formatCurrency(Number(l.unit_sell_price) || 0, cur)}</td>
                           <td className={`${MONEY_TD} text-right tabular-nums font-semibold text-text-primary`}>{formatCurrency(sell, cur)}</td>
-                          <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary hidden sm:table-cell`}>{costTotal > 0 ? formatCurrency(costTotal, cur) : '—'}</td>
-                          <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary hidden sm:table-cell`}>{m != null ? `${Math.round(m)}%` : '—'}</td>
+                          <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary ${teamCol}`}>{costTotal > 0 ? formatCurrency(costTotal, cur) : '—'}</td>
+                          <td className={`${MONEY_TD} text-right tabular-nums text-text-secondary ${teamCol}`}>{m != null ? `${Math.round(m)}%` : '—'}</td>
                           {!serviceOnly && <td className={`${MONEY_TD} !whitespace-normal hidden md:table-cell`}>{x.po ? <Link className="text-primary hover:underline" href={`/dashboard/supply/purchase-orders/${x.po.id}`}>{[supplierName, x.po.po_number].filter(Boolean).join(' · ')}</Link> : <span className="text-text-secondary">—</span>}</td>}
                           {!serviceOnly && <td className={`${MONEY_TD} hidden sm:table-cell`}><span className={cn('inline-block text-[11px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap', x.cls)}>{x.label}</span></td>}
                         </tr>
@@ -518,11 +520,11 @@ export default function OrderPage() {
               <ResponsiveDataView table={
                 <table className="w-full">
                   <thead><tr className="bg-surface-elevated border-b border-divider">
-                    <th className={`${MONEY_TH} text-right`}>Order value</th>
-                    <th className={`${MONEY_TH} text-right`}>Invoiced</th>
-                    <th className={`${MONEY_TH} text-right`}>Paid</th>
-                    <th className={`${MONEY_TH} text-right`}>Owing</th>
-                    <th className={`${MONEY_TH} text-right`}>Still to invoice</th>
+                    <th className={`${MONEY_TH} !text-right`}>Order value</th>
+                    <th className={`${MONEY_TH} !text-right`}>Invoiced</th>
+                    <th className={`${MONEY_TH} !text-right`}>Paid</th>
+                    <th className={`${MONEY_TH} !text-right`}>Owing</th>
+                    <th className={`${MONEY_TH} !text-right`}>Still to invoice</th>
                   </tr></thead>
                   <tbody><tr>
                     <td className={`${MONEY_TD} text-right tabular-nums font-semibold`}>{formatCurrency(money.value, cur)}</td>
@@ -534,7 +536,7 @@ export default function OrderPage() {
                 </table>
               } />
             </div>
-            <InvoicesList embedded quoteId={quote.id} onNew={notAccepted || (money.toInvoice <= 0.01 && !money.hasDraft) ? undefined : () => { startInvoice(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
+            <InvoicesList embedded plain quoteId={quote.id} onNew={notAccepted || (money.toInvoice <= 0.01 && !money.hasDraft) ? undefined : () => { startInvoice(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
               newLabel={money.hasDraft ? 'Open draft invoice' : 'Create invoice'} />
             <Section title={`Payments received${payments.length ? ` (${payments.length})` : ''}`}>
               {payments.length === 0 ? <Empty text="No payments yet. Use Record payment when the money comes in." /> : (
@@ -545,7 +547,7 @@ export default function OrderPage() {
                       <th className={`${MONEY_TH} text-left`}>Invoice</th>
                       <th className={`${MONEY_TH} text-left`}>Receipt</th>
                       <th className={`${MONEY_TH} text-left`}>Method · reference</th>
-                      <th className={`${MONEY_TH} text-right`}>Amount</th>
+                      <th className={`${MONEY_TH} !text-right`}>Amount</th>
                     </tr></thead>
                     <tbody>
                       {payments.map(p => (
@@ -571,7 +573,7 @@ export default function OrderPage() {
                       <th className={`${MONEY_TH} text-left`}>Invoice</th>
                       <th className={`${MONEY_TH} text-left`}>Date</th>
                       <th className={`${MONEY_TH} text-left`}>Status</th>
-                      <th className={`${MONEY_TH} text-right`}>Amount</th>
+                      <th className={`${MONEY_TH} !text-right`}>Amount</th>
                     </tr></thead>
                     <tbody>
                       {credits.map(c => (
@@ -638,8 +640,8 @@ export default function OrderPage() {
                           <th className={`${MONEY_TH} text-left`}>Bill</th>
                           <th className={`${MONEY_TH} text-left`}>For PO</th>
                           <th className={`${MONEY_TH} text-left`}>Status</th>
-                          <th className={`${MONEY_TH} text-right`}>Total</th>
-                          <th className={`${MONEY_TH} text-right`}>Still to pay</th>
+                          <th className={`${MONEY_TH} !text-right`}>Total</th>
+                          <th className={`${MONEY_TH} !text-right`}>Still to pay</th>
                         </tr></thead>
                         <tbody>
                           {bills.map(b => (
@@ -662,7 +664,7 @@ export default function OrderPage() {
                       <ResponsiveDataView table={
                         <table className="w-full" style={{ minWidth: 480 }}>
                           <thead><tr className="bg-surface-elevated border-b border-divider">
-                            <th className={`${MONEY_TH} text-left`}>Contractor</th><th className={`${MONEY_TH} text-left`}>Date</th><th className={`${MONEY_TH} text-left`}>Status</th><th className={`${MONEY_TH} text-right`}>Amount</th>
+                            <th className={`${MONEY_TH} text-left`}>Contractor</th><th className={`${MONEY_TH} text-left`}>Date</th><th className={`${MONEY_TH} text-left`}>Status</th><th className={`${MONEY_TH} !text-right`}>Amount</th>
                           </tr></thead>
                           <tbody>
                             {payouts.map(p => (

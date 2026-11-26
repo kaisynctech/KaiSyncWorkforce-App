@@ -146,8 +146,10 @@ export function scopeQuery(scope: DocListScope, withProject = false): string {
  * The invoices table used on Money → Invoices and, embedded, on a job or project (same columns, filters,
  * status tabs and Xero marks). Embedded: no page header, no scope chips, "+ Invoice" pre-fills the job/project.
  */
-export function InvoicesList({ clientId = null, jobId = null, dealId = null, quoteId = null, embedded = false, prefill, onNew, newLabel }: DocListScope & {
+export function InvoicesList({ clientId = null, jobId = null, dealId = null, quoteId = null, embedded = false, plain = false, prefill, onNew, newLabel }: DocListScope & {
   embedded?: boolean; prefill?: DocListScope
+  /** No search or status filters (an order's few invoices). */
+  plain?: boolean
   /** Replaces the "+ Invoice" link (an order makes its invoice from the quote). */
   onNew?: () => void; newLabel?: string
 }) {
@@ -299,7 +301,7 @@ export function InvoicesList({ clientId = null, jobId = null, dealId = null, quo
         )}
       </div>
 
-      <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 flex-wrap bg-surface items-center">
+      {!plain && <div className="flex gap-2 px-4 py-2 border-b border-divider shrink-0 flex-wrap bg-surface items-center">
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
@@ -345,7 +347,7 @@ export function InvoicesList({ clientId = null, jobId = null, dealId = null, quo
             </button>
           </div>
         )}
-      </div>
+      </div>}
 
       <div className="flex-1 overflow-auto">
         {loading ? (
