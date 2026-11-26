@@ -572,7 +572,7 @@ export default function OrderPage() {
         {/* ── Payments ── */}
         {tab === 'payments' && (
           <div className="space-y-3">
-            <Section title="Payments received" action={owingInvoice && !notAccepted ? <Link href={`/dashboard/money/invoices/${owingInvoice.id}?pay=1`} className="btn-primary h-8 px-3 text-[12px] inline-flex items-center gap-1"><span className="material-icons text-[16px]">add</span>Record payment</Link> : undefined}>
+            <Section title="Payments received" action={owingInvoice && !notAccepted && next?.action?.label !== 'Record payment' ? <Link href={`/dashboard/money/invoices/${owingInvoice.id}?pay=1`} className="btn-primary h-8 px-3 text-[12px] inline-flex items-center gap-1"><span className="material-icons text-[16px]">add</span>Record payment</Link> : undefined}>
               {payments.length === 0 ? <Empty text="No payments yet. When the client pays, press Record payment: it goes onto their invoice." /> : (
                 <ResponsiveDataView table={
                   <table className="w-full" style={{ minWidth: 520 }}>
