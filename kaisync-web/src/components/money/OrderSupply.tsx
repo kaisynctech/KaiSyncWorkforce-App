@@ -6,7 +6,7 @@
  * Tables, always. Receive / Update price / Cancel open right under their row (no pop-ups).
  */
 
-import { Fragment, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase/client'
 import { formatCurrency } from '@/lib/currencies'
@@ -48,6 +48,20 @@ const TD = 'px-2.5 py-2 text-[12.5px] text-text-primary align-middle'
 const inp = 'h-9 w-24 px-2 rounded-lg border-2 border-[#2563EB]/60 bg-surface text-right text-[13.5px] font-semibold focus:outline-none focus:border-[#2563EB]'
 const pill = 'inline-block text-[11px] font-semibold rounded-full px-2 py-0.5 whitespace-nowrap'
 
+/** Width of a scrolling table box, so a form opened under a row fits the screen instead of the wide table. */
+function useBoxWidth() {
+  const ref = useRef<HTMLDivElement>(null)
+  const [w, setW] = useState<number | null>(null)
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const ro = new ResizeObserver(() => setW(el.clientWidth))
+    ro.observe(el); setW(el.clientWidth)
+    return () => ro.disconnect()
+  })
+  return { ref, w }
+}
+
 /** Opens right under its row: a title, the form, and the buttons. */
 function Sheet({ title, onClose, children, footer }: { title: string; onClose: () => void; children: React.ReactNode; footer: React.ReactNode }) {
   return (
@@ -84,6 +98,7 @@ export function PurchaseOrdersPanel({ companyId, pos, poLines, sendTo, toSource,
   const ready = readyToSend(pos)
   const cancelledCount = pos.filter(p => p.status === 'cancelled').length
   const shown = pos.filter(p => showCancelled || p.status !== 'cancelled')
+  const box = useBoxWidth()
   const linesOf = (id: string) => poLines.filter(l => l.po_id === id)
   const emailOf = (p: SupplyPo) => (p.supplier_id ? sendTo.get(p.supplier_id) : undefined) ?? p.supplier?.email ?? ''
 
@@ -147,10 +162,10 @@ export function PurchaseOrdersPanel({ companyId, pos, poLines, sendTo, toSource,
 
       {shown.length > 0 && (
         <div className={cn(card, 'overflow-hidden')}>
-          <div className="overflow-x-auto">
+          <div ref={box.ref} className="overflow-x-auto">
             <table className="w-full" style={{ minWidth: 760 }}>
               <thead><tr className="border-b border-divider">
-                <th className={TH}>PO</th><th className={TH}>Supplier</th><th className={cn(TH, 'w-full')}>Items</th>
+                <th className={TH}>PO</th><th className={TH}>Supplier</th><th className={cn(TH, 'w-full min-w-[220px]')}>Items</th>
                 <th className={cn(TH, '!text-right')}>Amount excl. VAT</th><th className={cn(TH, '!text-right')}>Received</th><th className={TH}>Status</th><th className={TH} />
               </tr></thead>
               <tbody>
@@ -190,7 +205,7 @@ export function PurchaseOrdersPanel({ companyId, pos, poLines, sendTo, toSource,
                         </td>
                       </tr>
                       {isOpen && (
-                        <tr className="border-b border-divider"><td colSpan={7} className="p-0">
+                        <tr className="border-b border-divider"><td colSpan={7} className="p-0"><div className="sticky left-0" style={{ width: box.w ?? undefined }}>
                           {panel!.kind === 'receive' && <ReceiveSheet po={p} lines={ls} onClose={() => setPanel(null)}
                             onDone={async (text) => { setPanel(null); setMsg({ ok: true, text }); await onChanged() }} />}
                           {panel!.kind === 'edit' && <PoEditSheet po={p} lines={ls} canEmail={!!emailOf(p) && p.status !== 'approved'}
@@ -205,7 +220,7 @@ export function PurchaseOrdersPanel({ companyId, pos, poLines, sendTo, toSource,
                             }} />}
                           {panel!.kind === 'cancel' && <CancelPoSheet po={p} email={emailOf(p)} onClose={() => setPanel(null)}
                             onDone={async (text) => { setPanel(null); setMsg({ ok: true, text }); await onChanged() }} />}
-                        </td></tr>
+                        </div></td></tr>
                       )}
                     </Fragment>
                   )
@@ -396,6 +411,7 @@ export function GoodsReceivedPanel({ grns, grnLines, bills, pos, onChanged }: {
   const supplierOf = (id: string | null) => pos.find(p => p.id === id)?.supplier?.name ?? '—'
   const cancelledCount = grns.filter(g => g.status === 'cancelled').length
   const shown = grns.filter(g => showCancelled || g.status !== 'cancelled')
+  const box = useBoxWidth()
   const done = async (t: string) => { setPanel(null); setMsg({ ok: true, text: t }); await onChanged() }
 
   return (
@@ -404,11 +420,11 @@ export function GoodsReceivedPanel({ grns, grnLines, bills, pos, onChanged }: {
       {shown.length === 0 && <p className="text-[13px] text-text-secondary py-6 text-center">Nothing received yet. When a delivery arrives, press Receive on its purchase order.</p>}
       {shown.length > 0 && (
         <div className={cn(card, 'overflow-hidden')}>
-          <div className="overflow-x-auto">
+          <div ref={box.ref} className="overflow-x-auto">
             <table className="w-full" style={{ minWidth: 760 }}>
               <thead><tr className="border-b border-divider">
                 <th className={TH}>Delivery</th><th className={TH}>Date</th><th className={TH}>Supplier · PO</th><th className={TH}>Delivery note</th>
-                <th className={cn(TH, 'w-full')}>What arrived</th><th className={TH}>Supplier bill</th><th className={TH} />
+                <th className={cn(TH, 'w-full min-w-[220px]')}>What arrived</th><th className={TH}>Supplier bill</th><th className={TH} />
               </tr></thead>
               <tbody>
                 {shown.map(g => {
@@ -436,10 +452,10 @@ export function GoodsReceivedPanel({ grns, grnLines, bills, pos, onChanged }: {
                         </td>
                       </tr>
                       {isOpen && (
-                        <tr className="border-b border-divider"><td colSpan={7} className="p-0">
+                        <tr className="border-b border-divider"><td colSpan={7} className="p-0"><div className="sticky left-0" style={{ width: box.w ?? undefined }}>
                           {panel!.kind === 'edit' && <EditGrnSheet grn={g} onClose={() => setPanel(null)} onDone={done} />}
                           {panel!.kind === 'cancel' && <CancelGrnSheet grn={g} onClose={() => setPanel(null)} onDone={done} />}
-                        </td></tr>
+                        </div></td></tr>
                       )}
                     </Fragment>
                   )
