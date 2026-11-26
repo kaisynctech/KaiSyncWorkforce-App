@@ -50,11 +50,12 @@ type Grn = SupplyGrn
 type Bill = SupplyBill & { subtotal: number | null; amount_paid: number | null; balance_due: number | null; due_date: string | null }
 type Payout = { id: string; payout_status: string | null; total_amount: number | null; subtotal: number | null; payout_date: string | null; remittance_number: string | null; contractor?: { name: string } | null }
 
-type Tab = 'sold' | 'money' | 'buying'
+type Tab = 'sold' | 'invoices' | 'payments' | 'buying'
 type BuyTab = 'pos' | 'received' | 'other'
 /** Old links (?tab=invoices, ?tab=pos …) still land on the right tab. */
 function tabFrom(v: string | null): { tab: Tab; buy: BuyTab } {
-  if (v === 'invoices' || v === 'payments' || v === 'credits' || v === 'money') return { tab: 'money', buy: 'pos' }
+  if (v === 'invoices' || v === 'credits' || v === 'money') return { tab: 'invoices', buy: 'pos' }
+  if (v === 'payments') return { tab: 'payments', buy: 'pos' }
   if (v === 'pos' || v === 'buying') return { tab: 'buying', buy: 'pos' }
   if (v === 'received') return { tab: 'buying', buy: 'received' }
   if (v === 'purchasing') return { tab: 'buying', buy: 'other' }
@@ -218,7 +219,7 @@ export default function OrderPage() {
   function startInvoice() {
     const draft = invoices.find(i => String(i.status) === 'draft')
     if (draft) { router.push(`/dashboard/money/invoices/${draft.id}`); return }
-    if (money.toInvoice <= 0.01 && invoices.some(i => !['voided', 'cancelled'].includes(String(i.status)))) { setTab('money'); return }
+    if (money.toInvoice <= 0.01 && invoices.some(i => !['voided', 'cancelled'].includes(String(i.status)))) { setTab('invoices'); return }
     setInvoicePanel(true)
   }
   async function createInvoice() {
@@ -287,8 +288,9 @@ export default function OrderPage() {
   const posToSend = pos.filter(p => p.status === 'approved' && !p.sent_at)
   const TABS: { id: Tab; label: string; short: string; icon: string; count: number }[] = [
     { id: 'sold', label: 'What was sold', short: 'Sold', icon: 'inventory_2', count: counted.length },
-    { id: 'money', label: 'Invoices & payments', short: 'Invoices', icon: 'receipt_long', count: invoices.length + payments.length + credits.length },
-    ...(showBuying ? [{ id: 'buying' as Tab, label: 'Buying in', short: 'Buying in', icon: 'local_shipping', count: pos.length + liveGrns.length + rfqs.length + bills.length + payouts.length }] : []),
+    { id: 'invoices', label: 'Invoices', short: 'Invoices', icon: 'receipt_long', count: invoices.length + credits.length },
+    { id: 'payments', label: 'Payments', short: 'Payments', icon: 'payments', count: payments.length },
+    ...(showBuying ? [{ id: 'buying' as Tab, label: 'Buying in', short: 'Buying', icon: 'local_shipping', count: pos.length + liveGrns.length + rfqs.length + bills.length + payouts.length }] : []),
   ]
   const BUY_TABS: { id: BuyTab; label: string; count: number }[] = [
     { id: 'pos', label: 'Purchase orders', count: pos.length },
@@ -432,16 +434,16 @@ export default function OrderPage() {
         })()}
 
         {/* ── Tabs: big and clear, so you know where you're going ── */}
-        <div role="tablist" className={cn('grid gap-1.5 p-1.5 rounded-2xl bg-surface-elevated border border-divider', TABS.length === 3 ? 'grid-cols-3' : 'grid-cols-2')}>
+        <div role="tablist" className={cn('grid gap-1 p-1 rounded-2xl bg-[#E9EDF3] dark:bg-black/30 border border-divider', TABS.length === 4 ? 'grid-cols-4' : 'grid-cols-3')}>
           {TABS.map(t => {
             const on = tab === t.id
             return (
               <button key={t.id} type="button" role="tab" aria-selected={on} onClick={() => { setTab(t.id); setNote(null) }}
-                className={cn('h-11 rounded-xl flex items-center justify-center gap-1.5 px-2 text-[13px] sm:text-[14px] font-semibold transition-colors min-w-0',
-                  on ? 'bg-[#2563EB] text-white shadow-md shadow-blue-600/25' : 'text-text-secondary hover:text-text-primary hover:bg-surface')}>
-                <span className="material-icons !text-[18px] hidden sm:inline">{t.icon}</span>
+                className={cn('h-11 rounded-xl flex items-center justify-center gap-1.5 px-1.5 text-[12.5px] sm:text-[14px] font-semibold transition-all min-w-0',
+                  on ? 'bg-white text-slate-900 shadow-[0_1px_3px_rgba(15,23,42,.18),0_4px_12px_rgba(15,23,42,.10)] dark:bg-slate-600 dark:text-white' : 'text-text-secondary hover:text-text-primary')}>
+                <span className={cn('material-icons !text-[18px] hidden sm:inline', on ? 'text-slate-700 dark:text-white' : '')}>{t.icon}</span>
                 <span className="truncate sm:hidden">{t.short}</span><span className="truncate hidden sm:inline">{t.label}</span>
-                {t.count > 0 && <span className={cn('min-w-[20px] h-5 px-1.5 rounded-full text-[11px] leading-5 text-center', on ? 'bg-white/25 text-white' : 'bg-surface border border-divider text-text-secondary')}>{t.count}</span>}
+                {t.count > 0 && <span className={cn('hidden sm:inline-block min-w-[20px] h-5 px-1.5 rounded-full text-[11px] leading-5 text-center', on ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'bg-white/70 dark:bg-white/10 text-text-secondary')}>{t.count}</span>}
               </button>
             )
           })}
@@ -513,8 +515,8 @@ export default function OrderPage() {
           </div>
         )}
 
-        {/* ── Invoices & payments ── */}
-        {tab === 'money' && (
+        {/* ── Invoices ── */}
+        {tab === 'invoices' && (
           <div className="space-y-3">
             <div className="rounded-xl border border-divider bg-surface overflow-hidden">
               <ResponsiveDataView table={
@@ -538,32 +540,6 @@ export default function OrderPage() {
             </div>
             <InvoicesList embedded plain quoteId={quote.id} onNew={notAccepted || (money.toInvoice <= 0.01 && !money.hasDraft) ? undefined : () => { startInvoice(); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
               newLabel={money.hasDraft ? 'Open draft invoice' : 'Create invoice'} />
-            <Section title={`Payments received${payments.length ? ` (${payments.length})` : ''}`}>
-              {payments.length === 0 ? <Empty text="No payments yet. Use Record payment when the money comes in." /> : (
-                <ResponsiveDataView table={
-                  <table className="w-full" style={{ minWidth: 520 }}>
-                    <thead><tr className="bg-surface-elevated border-b border-divider">
-                      <th className={`${MONEY_TH} text-left`}>Date</th>
-                      <th className={`${MONEY_TH} text-left`}>Invoice</th>
-                      <th className={`${MONEY_TH} text-left`}>Receipt</th>
-                      <th className={`${MONEY_TH} text-left`}>Method · reference</th>
-                      <th className={`${MONEY_TH} !text-right`}>Amount</th>
-                    </tr></thead>
-                    <tbody>
-                      {payments.map(p => (
-                        <tr key={p.id} className="border-b border-divider last:border-0">
-                          <td className={MONEY_TD}>{fmtDay(p.transaction_date ?? p.created_at)}</td>
-                          <td className={MONEY_TD}><Link className="text-primary hover:underline" href={`/dashboard/money/invoices/${p.source_id}`}>{invNumber.get(p.source_id) ?? 'Invoice'}</Link></td>
-                          <td className={`${MONEY_TD} text-text-secondary`}>{p.receipt_number ?? '—'}</td>
-                          <td className={`${MONEY_TD} text-text-secondary`}>{[label(p.payment_method), p.reference_number].filter(v => v && v !== '—').join(' · ') || '—'}</td>
-                          <td className={`${MONEY_TD} text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-400`}>{formatCurrency(Number(p.amount) || 0, cur)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                } />
-              )}
-            </Section>
             {credits.length > 0 && (
               <Section title={`Credit notes (${credits.length})`}>
                 <ResponsiveDataView table={
@@ -590,6 +566,39 @@ export default function OrderPage() {
                 } />
               </Section>
             )}
+          </div>
+        )}
+
+        {/* ── Payments ── */}
+        {tab === 'payments' && (
+          <div className="space-y-3">
+            <Section title="Payments received" action={owingInvoice && !notAccepted ? <Link href={`/dashboard/money/invoices/${owingInvoice.id}?pay=1`} className="btn-primary h-8 px-3 text-[12px] inline-flex items-center gap-1"><span className="material-icons text-[16px]">add</span>Record payment</Link> : undefined}>
+              {payments.length === 0 ? <Empty text="No payments yet. When the client pays, press Record payment: it goes onto their invoice." /> : (
+                <ResponsiveDataView table={
+                  <table className="w-full" style={{ minWidth: 520 }}>
+                    <thead><tr className="bg-surface-elevated border-b border-divider">
+                      <th className={`${MONEY_TH} text-left`}>Date</th>
+                      <th className={`${MONEY_TH} text-left`}>Invoice</th>
+                      <th className={`${MONEY_TH} text-left`}>Receipt</th>
+                      <th className={`${MONEY_TH} text-left`}>Method · reference</th>
+                      <th className={`${MONEY_TH} !text-right`}>Amount</th>
+                    </tr></thead>
+                    <tbody>
+                      {payments.map(p => (
+                        <tr key={p.id} className="border-b border-divider last:border-0">
+                          <td className={MONEY_TD}>{fmtDay(p.transaction_date ?? p.created_at)}</td>
+                          <td className={MONEY_TD}><Link className="text-primary hover:underline" href={`/dashboard/money/invoices/${p.source_id}`}>{invNumber.get(p.source_id) ?? 'Invoice'}</Link></td>
+                          <td className={`${MONEY_TD} text-text-secondary`}>{p.receipt_number ?? '—'}</td>
+                          <td className={`${MONEY_TD} text-text-secondary`}>{[label(p.payment_method), p.reference_number].filter(v => v && v !== '—').join(' · ') || '—'}</td>
+                          <td className={`${MONEY_TD} text-right tabular-nums font-medium text-emerald-700 dark:text-emerald-400`}>{formatCurrency(Number(p.amount) || 0, cur)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                } />
+              )}
+            </Section>
+            {payments.length > 0 && <p className="text-[11.5px] text-text-secondary px-1">Total received: <b className="text-text-primary tabular-nums">{formatCurrency(money.paid, cur)}</b> of {formatCurrency(money.value, cur)}</p>}
           </div>
         )}
 
