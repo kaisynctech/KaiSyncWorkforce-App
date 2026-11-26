@@ -6,7 +6,9 @@ import {
 
 /**
  * Works the Xero queue (called every minute by the 'xero-sync' cron, with the vault secret).
- * Each job: client, supplier, invoice, invoice_void, credit_note, payment, po_bill, supplier_bill, supplier_payment, invoice_pdf.
+ * Each job: client, supplier, invoice, invoice_void, credit_note, payment, po_bill, supplier_bill, supplier_payment, supplier_refund, invoice_pdf.
+ * Supplier bills stay equal to KaiSync's: a price change on a bill already paid in Xero goes as an extra bill or a
+ * supplier credit note for the difference; a cancelled, paid bill is credited and its refund recorded on that credit.
  * Lines carry the Xero item (matched or made by code) and tracking ("Project" and "Job" categories, one option each),
  * when those switches are on; neither ever stops a document from going across.
  * Idempotent: every document is linked to its Xero id (xero_doc_links); before creating anything it looks for
@@ -436,34 +438,147 @@ async function syncPoBill(ctx: Ctx, poId: string) {
 async function syncSupplierBill(ctx: Ctx, id: string) {
   const { data: si } = await ctx.admin.from('supplier_invoices').select('*').eq('id', id).maybeSingle()
   if (!si) throw new Skip('Deleted in KaiSync')
-  if (si.status === 'cancelled') {
-    // Cancelled in KaiSync (e.g. its purchase order was cancelled before anything was paid): void it in Xero.
-    const link = await docLink(ctx, 'supplier_bill', id)
+  if (si.status === 'cancelled') return cancelSupplierBill(ctx, si)
+  if (si.approval_status !== 'approved') throw new Skip('Not approved')
+  let target = await docLink(ctx, 'supplier_bill', id)
+  if (!target && si.po_id) target = await docLink(ctx, 'po_bill', si.po_id)
+  if (target) {
+    // Xero won't change a bill that already has payments: send the difference as its own bill or credit note.
+    const cur = await xero(ctx.token, `/Invoices/${target.xero_id}`)
+    const xb = cur.ok ? cur.data.Invoices?.[0] : null
+    if (xb && money(xb.AmountPaid) + money(xb.AmountCredited) > 0) {
+      await saveDocLink(ctx, 'supplier_bill', id, target.xero_id, xb.InvoiceNumber ?? target.xero_number, xb.Status)
+      return adjustPaidBill(ctx, si, target.xero_id, xb)
+    }
+  }
+  await pushSupplierBillDoc(ctx, si, target?.xero_id)
+}
+
+/** The bill as it is in KaiSync, created or updated in Xero (only while it has no payments there). */
+async function pushSupplierBillDoc(ctx: Ctx, si: any, billXeroId?: string) {
+  const id = si.id as string
+  if (!si.supplier_id) throw new Error('This supplier invoice has no supplier.')
+  const { data: lines } = await ctx.admin.from('supplier_invoice_lines').select('*').eq('invoice_id', id).order('line_no')
+  const rows = (lines ?? []).length
+    ? (lines ?? []).map(l => ({ description: l.description, qty: Number(l.quantity ?? 1), price: Number(l.unit_price ?? 0), rate: si.tax_type === 'no_vat' ? 0 : Number(l.vat_rate ?? si.vat_rate ?? 0), inventoryItemId: l.inventory_item_id }))
+    : [{ description: si.notes || `Supplier invoice ${si.invoice_number ?? ''}`, qty: 1, price: money(si.subtotal ?? si.total_amount), rate: si.tax_type === 'no_vat' ? 0 : Number(si.vat_rate ?? 0) }]
+  const x = await pushBill(ctx, {
+    billId: billXeroId, supplierId: si.supplier_id, number: si.invoice_number || si.bill_number || `SI-${id.slice(0, 8)}`,
+    reference: si.po_id ? `PO ${await poNumber(ctx, si.po_id)}` : (si.bill_number ?? ''),
+    date: day(si.approved_at ?? si.created_at), due: si.due_date ? day(si.due_date) : null, status: 'AUTHORISED',
+    inclusive: !!si.is_vat_inclusive, lines: rows, currency: si.currency, rate: rateForXero(si),
+    tracking: await billTracking(ctx, si),
+  })
+  await saveDocLink(ctx, 'supplier_bill', id, x.InvoiceID, x.InvoiceNumber, x.Status)
+  await keepXeroRate(ctx, 'supplier_invoices', id, si, x.CurrencyRate)
+  if (si.po_id) await saveDocLink(ctx, 'po_bill', si.po_id, x.InvoiceID, x.InvoiceNumber, x.Status)
+  await ctx.admin.from('supplier_invoices').update({ xero_synced_total: money(si.total_amount) }).eq('id', id)
+}
+
+async function poNumber(ctx: Ctx, poId: string) {
+  return (await ctx.admin.from('purchase_orders').select('po_number').eq('id', poId).maybeSingle()).data?.po_number ?? ''
+}
+async function billTracking(ctx: Ctx, si: any) {
+  return trackingFor(ctx, { jobId: si.job_id, projectId: si.project_id
+    ?? (si.po_id ? (await ctx.admin.from('purchase_orders').select('deal_id').eq('id', si.po_id).maybeSingle()).data?.deal_id : null) })
+}
+const suffix = () => Date.now().toString(36).slice(-5).toUpperCase()
+
+/** A supplier credit note (ACCPAYCREDIT) in Xero. */
+async function pushSupplierCredit(ctx: Ctx, si: any, o: { number: string; reference: string; amount: number }) {
+  const contactId = await ensureContact(ctx.admin, ctx.token, ctx.conn.company_id, 'contractor', si.supplier_id)
+  const purchases = need(ctx.conn.purchases_account_code, 'purchases')
+  const rate = si.tax_type === 'no_vat' ? 0 : Number(si.vat_rate ?? 0)
+  const r = await xero(ctx.token, '/CreditNotes', { method: 'POST', body: JSON.stringify({ CreditNotes: [{
+    Type: 'ACCPAYCREDIT', Contact: { ContactID: contactId }, CreditNoteNumber: o.number, Reference: o.reference.slice(0, 255),
+    Date: day(new Date().toISOString()), LineAmountTypes: 'Inclusive', Status: 'AUTHORISED',
+    LineItems: [{ ...withItem(null, await billTracking(ctx, si)), Description: o.reference, Quantity: 1, UnitAmount: money(o.amount), AccountCode: purchases, TaxType: await taxType(ctx, rate, 'purchases') }],
+    CurrencyCode: await currencyFor(ctx, si.currency), ...rateForXero(si),
+  }] }) })
+  const x = r.ok ? r.data.CreditNotes?.[0] : null
+  if (!x?.CreditNoteID) throw new Error(r.error ?? 'Xero did not return the supplier credit note')
+  return x as { CreditNoteID: string; CreditNoteNumber: string; Status: string }
+}
+/** Uses a supplier credit against a bill, never more than the bill still owes in Xero. */
+async function allocateCredit(ctx: Ctx, creditId: string, billXeroId: string, amount: number) {
+  const xb = await xero(ctx.token, `/Invoices/${billXeroId}`)
+  const due = money(xb.ok ? xb.data.Invoices?.[0]?.AmountDue : 0)
+  const amt = Math.min(money(amount), due)
+  if (amt <= 0) return 0
+  const a = await xero(ctx.token, `/CreditNotes/${creditId}/Allocations`, { method: 'PUT', body: JSON.stringify({ Allocations: [{ Amount: amt, Invoice: { InvoiceID: billXeroId }, Date: day(new Date().toISOString()) }] }) })
+  if (!a.ok) throw new Error(`Supplier credit made in Xero, but it could not be put against the bill: ${a.error}`)
+  return amt
+}
+
+/** Price changed after the bill was (part) paid: send the difference (extra bill, or credit note against the bill). */
+async function adjustPaidBill(ctx: Ctx, si: any, billXeroId: string, xb: { Total?: number }) {
+  const base = si.xero_synced_total != null ? money(si.xero_synced_total) : money(xb.Total)
+  const diff = money(money(si.total_amount) - base)
+  if (Math.abs(diff) > 0.005) {
+    const po = si.po_id ? await poNumber(ctx, si.po_id) : ''
+    const what = `Price change${po ? ` on ${po}` : ''} (${si.invoice_number || si.bill_number || 'bill'})`
+    const num = `${si.invoice_number || si.bill_number || 'BILL'}-ADJ-${suffix()}`
+    if (diff > 0) {
+      const x = await pushBill(ctx, {
+        supplierId: si.supplier_id, number: num, reference: what, date: day(new Date().toISOString()), due: si.due_date ? day(si.due_date) : null,
+        status: 'AUTHORISED', inclusive: true, currency: si.currency, rate: rateForXero(si), tracking: await billTracking(ctx, si),
+        lines: [{ description: what, qty: 1, price: diff, rate: si.tax_type === 'no_vat' ? 0 : Number(si.vat_rate ?? 0) }],
+      })
+      await saveDocLink(ctx, 'supplier_bill_adj', crypto.randomUUID(), x.InvoiceID, x.InvoiceNumber, x.Status)
+    } else {
+      const cn = await pushSupplierCredit(ctx, si, { number: num, reference: what, amount: -diff })
+      await allocateCredit(ctx, cn.CreditNoteID, billXeroId, -diff)
+      await saveDocLink(ctx, 'supplier_bill_adj', crypto.randomUUID(), cn.CreditNoteID, cn.CreditNoteNumber, cn.Status)
+    }
+  }
+  await ctx.admin.from('supplier_invoices').update({ xero_synced_total: money(si.total_amount) }).eq('id', si.id)
+}
+
+/** Bill cancelled in KaiSync (its PO was cancelled). Nothing paid: void it in Xero. Paid: a supplier credit note
+ *  for the bill clears what was still owed; the paid part stays on that credit until the supplier refunds it. */
+async function cancelSupplierBill(ctx: Ctx, si: any) {
+  const id = si.id as string
+  if (await docLink(ctx, 'supplier_credit', id)) return
+  let link = await docLink(ctx, 'supplier_bill', id)
+  if (money(si.amount_paid) <= 0) {
     if (!link) throw new Skip('Cancelled before it went to Xero')
+    if (link.xero_status === 'VOIDED') return
     const v = await xero(ctx.token, '/Invoices', { method: 'POST', body: JSON.stringify({ Invoices: [{ InvoiceID: link.xero_id, Status: 'VOIDED' }] }) })
     if (!v.ok) throw new Error(`Could not void it in Xero: ${v.error}. If it has payments in Xero, remove them there first.`)
     await saveDocLink(ctx, 'supplier_bill', id, link.xero_id, link.xero_number ?? null, 'VOIDED')
     return
   }
-  if (si.approval_status !== 'approved') throw new Skip('Not approved')
-  if (!si.supplier_id) throw new Error('This supplier invoice has no supplier.')
-  const { data: lines } = await ctx.admin.from('supplier_invoice_lines').select('*').eq('invoice_id', id).order('line_no')
-  let target = await docLink(ctx, 'supplier_bill', id)
-  if (!target && si.po_id) target = await docLink(ctx, 'po_bill', si.po_id)   // update the bill made from the PO
-  const rows = (lines ?? []).length
-    ? (lines ?? []).map(l => ({ description: l.description, qty: Number(l.quantity ?? 1), price: Number(l.unit_price ?? 0), rate: si.tax_type === 'no_vat' ? 0 : Number(l.vat_rate ?? si.vat_rate ?? 0), inventoryItemId: l.inventory_item_id }))
-    : [{ description: si.notes || `Supplier invoice ${si.invoice_number ?? ''}`, qty: 1, price: money(si.subtotal ?? si.total_amount), rate: si.tax_type === 'no_vat' ? 0 : Number(si.vat_rate ?? 0) }]
-  const x = await pushBill(ctx, {
-    billId: target?.xero_id, supplierId: si.supplier_id, number: si.invoice_number || si.bill_number || `SI-${id.slice(0, 8)}`,
-    reference: si.po_id ? `PO ${(await ctx.admin.from('purchase_orders').select('po_number').eq('id', si.po_id).maybeSingle()).data?.po_number ?? ''}` : (si.bill_number ?? ''),
-    date: day(si.approved_at ?? si.created_at), due: si.due_date ? day(si.due_date) : null, status: 'AUTHORISED',
-    inclusive: !!si.is_vat_inclusive, lines: rows, currency: si.currency, rate: rateForXero(si),
-    tracking: await trackingFor(ctx, { jobId: si.job_id, projectId: si.project_id
-      ?? (si.po_id ? (await ctx.admin.from('purchase_orders').select('deal_id').eq('id', si.po_id).maybeSingle()).data?.deal_id : null) }),
-  })
-  await saveDocLink(ctx, 'supplier_bill', id, x.InvoiceID, x.InvoiceNumber, x.Status)
-  await keepXeroRate(ctx, 'supplier_invoices', id, si, x.CurrencyRate)
-  if (si.po_id) await saveDocLink(ctx, 'po_bill', si.po_id, x.InvoiceID, x.InvoiceNumber, x.Status)
+  // The bill and every payment on it go first, so Xero's numbers are complete before the credit.
+  if (!link) { await pushSupplierBillDoc(ctx, si); link = await docLink(ctx, 'supplier_bill', id) }
+  if (!link) throw new Error('The bill is not in Xero yet.')
+  const { data: txs } = await ctx.admin.from('finance_transactions').select('id').eq('source_table', 'supplier_invoices')
+    .eq('source_id', id).eq('transaction_type', 'supplier_payment').order('created_at')
+  for (const t of txs ?? []) await syncSupplierPayment(ctx, t.id)
+  const total = si.xero_synced_total != null ? money(si.xero_synced_total) : money(si.total_amount)
+  const po = si.po_id ? await poNumber(ctx, si.po_id) : ''
+  const cn = await pushSupplierCredit(ctx, si, { number: `${si.invoice_number || si.bill_number || 'BILL'}-CN`, reference: `Cancelled ${po || 'purchase order'}`, amount: total })
+  await allocateCredit(ctx, cn.CreditNoteID, link.xero_id, total)
+  await saveDocLink(ctx, 'supplier_credit', id, cn.CreditNoteID, cn.CreditNoteNumber, cn.Status)
+}
+
+/** The supplier refunded money paid on a cancelled PO: a refund on its credit note in Xero (money into the bank). */
+async function syncSupplierRefund(ctx: Ctx, txId: string) {
+  if (await docLink(ctx, 'supplier_refund', txId)) return
+  const { data: tx } = await ctx.admin.from('finance_transactions').select('*').eq('id', txId).maybeSingle()
+  if (!tx) throw new Skip('Deleted in KaiSync')
+  let cn = await docLink(ctx, 'supplier_credit', tx.source_id)
+  if (!cn) {
+    const { data: si } = await ctx.admin.from('supplier_invoices').select('*').eq('id', tx.source_id).maybeSingle()
+    if (si?.status === 'cancelled') { await cancelSupplierBill(ctx, si); cn = await docLink(ctx, 'supplier_credit', tx.source_id) }
+  }
+  if (!cn) throw new Error('The supplier credit for this cancelled order is not in Xero yet.')
+  const r = await xero(ctx.token, '/Payments', { method: 'PUT', body: JSON.stringify({ Payments: [{
+    CreditNote: { CreditNoteID: cn.xero_id }, Account: bankAccount(ctx),
+    Date: day(tx.transaction_date ?? tx.created_at), Amount: money(tx.amount), Reference: (tx.reference_number ?? 'Supplier refund').slice(0, 255),
+  }] }) })
+  const x = r.ok ? r.data.Payments?.[0] : null
+  if (!x?.PaymentID) throw new Error(r.error ?? 'Xero did not return the refund')
+  await saveDocLink(ctx, 'supplier_refund', txId, x.PaymentID, null, x.Status)
 }
 
 async function syncSupplierPayment(ctx: Ctx, id: string) {
@@ -473,7 +588,11 @@ async function syncSupplierPayment(ctx: Ctx, id: string) {
   if (tx) {
     if (tx.transaction_type !== 'supplier_payment' || tx.source_table !== 'supplier_invoices') throw new Skip('Not a supplier payment')
     let bill = await docLink(ctx, 'supplier_bill', tx.source_id)
-    if (!bill) { await syncSupplierBill(ctx, tx.source_id); bill = await docLink(ctx, 'supplier_bill', tx.source_id) }
+    if (!bill) {
+      await syncSupplierBill(ctx, tx.source_id)
+      if (await docLink(ctx, 'supplier_payment', id)) return   // sent while the bill went across
+      bill = await docLink(ctx, 'supplier_bill', tx.source_id)
+    }
     if (!bill) throw new Error('The bill is not in Xero yet.')
     const r = await xero(ctx.token, '/Payments', { method: 'PUT', body: JSON.stringify({ Payments: [{
       Invoice: { InvoiceID: bill.xero_id }, Account: bankAccount(ctx),
@@ -541,13 +660,14 @@ async function runJob(ctx: Ctx, entity: string, recordId: string) {
     case 'po_bill': return syncPoBill(ctx, recordId)
     case 'supplier_bill': return syncSupplierBill(ctx, recordId)
     case 'supplier_payment': return syncSupplierPayment(ctx, recordId)
+    case 'supplier_refund': return syncSupplierRefund(ctx, recordId)
     case 'invoice_pdf': return attachInvoicePdf(ctx, recordId)
     default: throw new Skip(`Unknown job ${entity}`)
   }
 }
 
 // Order inside a company: contacts first, then documents, then payments.
-const ORDER: Record<string, number> = { client: 0, supplier: 0, invoice: 1, invoice_pdf: 2, credit_note: 2, po_bill: 2, supplier_bill: 3, invoice_void: 4, payment: 5, supplier_payment: 6 }
+const ORDER: Record<string, number> = { client: 0, supplier: 0, invoice: 1, invoice_pdf: 2, credit_note: 2, po_bill: 2, supplier_bill: 3, invoice_void: 4, payment: 5, supplier_payment: 6, supplier_refund: 7 }
 
 Deno.serve(async (req: Request) => {
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)

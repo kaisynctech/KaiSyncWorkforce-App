@@ -101,8 +101,10 @@ function Err({ text }: { text: string | null }) {
 
 /** Money on a PO: its bill (one per PO), or the old per-delivery bills added up. */
 export function poMoney(po: SupplyPo, bills: SupplyBill[]) {
-  const live = bills.filter(b => b.po_id === po.id && b.status !== 'cancelled')
-  const own = live.find(b => !b.grn_id) ?? null
+  const mine = bills.filter(b => b.po_id === po.id)
+  const live = mine.filter(b => b.status !== 'cancelled')
+  // A cancelled PO's bill still counts while money paid on it is waiting to be refunded.
+  const own = live.find(b => !b.grn_id) ?? mine.find(b => !b.grn_id && n0(b.amount_paid) > 0) ?? null
   const old = live.filter(b => !!b.grn_id)
   const total = own ? n0(own.total_amount) : old.length ? old.reduce((s, b) => s + n0(b.total_amount), 0) : n0(po.total_amount)
   const paid = (own ? [own] : old).reduce((s, b) => s + n0(b.amount_paid), 0)
@@ -500,7 +502,7 @@ function RefundModal({ po, toRefund, onClose, onDone }: { po: SupplyPo; toRefund
           const r = await recordSupplierRefund(createClient(), po.id, { amount: amt, date, reference: ref })
           setBusy(false)
           if (!r.ok) { setError(r.message); return }
-          await onDone(`Refund of ${money(amt, cur)} from ${po.supplier?.name ?? 'the supplier'} recorded. Record it in Xero too (as a refund on their bill).`)
+          await onDone(`Refund of ${money(amt, cur)} from ${po.supplier?.name ?? 'the supplier'} recorded. It goes to Xero within a minute.`)
         }}>{busy ? 'Saving…' : 'Record refund'}</button>
       </>}>
       <Err text={error} />
