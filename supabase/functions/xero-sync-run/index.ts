@@ -572,8 +572,11 @@ async function syncSupplierRefund(ctx: Ctx, txId: string) {
     if (si?.status === 'cancelled') { await cancelSupplierBill(ctx, si); cn = await docLink(ctx, 'supplier_credit', tx.source_id) }
   }
   if (!cn) throw new Error('The supplier credit for this cancelled order is not in Xero yet.')
+  // A refund in another currency than Xero's own needs the rate: use the credit note's.
+  const xc = await xero(ctx.token, `/CreditNotes/${cn.xero_id}`)
+  const cRate = Number(xc.ok ? xc.data.CreditNotes?.[0]?.CurrencyRate : 0)
   const r = await xero(ctx.token, '/Payments', { method: 'PUT', body: JSON.stringify({ Payments: [{
-    CreditNote: { CreditNoteID: cn.xero_id }, Account: bankAccount(ctx),
+    CreditNote: { CreditNoteID: cn.xero_id }, Account: bankAccount(ctx), ...(cRate > 0 && Math.abs(cRate - 1) > 1e-9 ? { CurrencyRate: cRate } : {}),
     Date: day(tx.transaction_date ?? tx.created_at), Amount: money(tx.amount), Reference: (tx.reference_number ?? 'Supplier refund').slice(0, 255),
   }] }) })
   const x = r.ok ? r.data.Payments?.[0] : null
