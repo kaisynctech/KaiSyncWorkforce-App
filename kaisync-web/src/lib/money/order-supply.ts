@@ -89,6 +89,11 @@ const MESSAGES: Record<string, string> = {
   NOTHING_TO_ORDER: 'Tick at least one item with a supplier and a price.',
   SUPPLIER_REQUIRED: 'Each ticked item needs a supplier. Use Ask suppliers for the ones without a price.',
   ITEM_NOT_FOUND: 'One of the items no longer exists. Refresh and try again.',
+  BAD_AMOUNT: 'Check the amount: it must be more than 0 and not more than what is still owed.',
+  OLD_DELIVERY_BILLS: 'This purchase order was billed per delivery (the old way). Pay those bills under Money → Supplier bills.',
+  NOTHING_TO_REFUND: 'Nothing was paid on this purchase order, so there is nothing to refund.',
+  NOT_APPROVED: 'This bill still needs approving before it can be paid.',
+  BILL_CANCELLED: 'This bill was cancelled.',
 }
 
 export function supplyError(message: string | null | undefined): string {
@@ -107,7 +112,8 @@ export async function processOrder(supabase: SupabaseClient, quoteId: string) {
   return { ok: true as const, created: d.created ?? [], toSource: Number(d.to_source) || 0 }
 }
 
-export async function receiveGoods(supabase: SupabaseClient, poId: string, deliveryNote: string, lines: { po_line_id: string; qty: number }[], notes?: string) {
+/** qty = how many arrived; rejected = of those, how many were sent back (with the reason). */
+export async function receiveGoods(supabase: SupabaseClient, poId: string, deliveryNote: string, lines: { po_line_id: string; qty: number; rejected?: number; reason?: string | null }[], notes?: string) {
   const { data, error } = await rpc(supabase, 'po_receive_goods', { p_po_id: poId, p_delivery_note: deliveryNote, p_lines: lines.filter(l => l.qty > 0), p_notes: notes ?? null })
   if (error) return { ok: false as const, message: supplyError(error.message) }
   return { ok: true as const, ...(data as { grn_id: string; grn_number: string; bill_id: string; fully_received: boolean }) }
@@ -130,6 +136,19 @@ export async function updatePoLines(supabase: SupabaseClient, poId: string, line
 
 export async function cancelPo(supabase: SupabaseClient, poId: string, reason?: string) {
   const { error } = await rpc(supabase, 'po_cancel', { p_po_id: poId, p_reason: reason ?? null })
+  return error ? { ok: false as const, message: supplyError(error.message) } : { ok: true as const }
+}
+
+/** Pay the supplier for a PO (full, deposit or part); each payment goes to Xero on its own. */
+export async function paySupplier(supabase: SupabaseClient, poId: string, p: { amount: number; date: string; method: string; reference: string; supplierInvoiceNo: string }) {
+  const { error } = await rpc(supabase, 'po_pay_supplier', { p_po_id: poId, p_amount: p.amount, p_date: p.date, p_method: p.method,
+    p_reference: p.reference || null, p_supplier_invoice_no: p.supplierInvoiceNo || null })
+  return error ? { ok: false as const, message: supplyError(error.message) } : { ok: true as const }
+}
+
+/** A cancelled PO that had been paid: the supplier's refund came in. */
+export async function recordSupplierRefund(supabase: SupabaseClient, poId: string, p: { amount: number; date: string; reference: string }) {
+  const { error } = await rpc(supabase, 'po_record_refund', { p_po_id: poId, p_amount: p.amount, p_date: p.date, p_reference: p.reference || null })
   return error ? { ok: false as const, message: supplyError(error.message) } : { ok: true as const }
 }
 

@@ -2,7 +2,7 @@
 
 /**
  * One order (an accepted quote) with everything done for it in one place.
- * A small "what's next" card with one button, then three tabs:
+ * A small card with how the client is paying, then tabs:
  *  What was sold · Invoices & payments (with credit notes) · Buying in (purchase orders, goods received, RFQs, bills).
  * A service-only order with nothing bought in has no Buying in tab.
  * The id in the address is the quote's id.
@@ -25,7 +25,7 @@ import { XeroMark, useXeroStatuses } from '@/components/xero/XeroMark'
 import { createJob } from '@/lib/jobs'
 import { createProject } from '@/lib/projects'
 import { isServiceOnly, lineSupply, processOrder, type OrderPoLine, type SupplyMode } from '@/lib/money/order-supply'
-import { GoodsReceivedPanel, PurchaseOrdersPanel, type SupplyBill, type SupplyGrn, type SupplyGrnLine, type SupplyPo } from '@/components/money/OrderSupply'
+import { GoodsReceivedPanel, PurchaseOrdersPanel, type SupplyBill, type SupplyGrn, type SupplyGrnLine, type SupplyPay, type SupplyPo } from '@/components/money/OrderSupply'
 
 type Quote = {
   id: string; company_id: string; quote_number: string | null; title: string | null; status: string; currency: string | null
@@ -126,6 +126,7 @@ export default function OrderPage() {
   const [note, setNote] = useState<string | null>(null)
   const [bills, setBills] = useState<Bill[]>([])
   const [allBills, setAllBills] = useState<Bill[]>([])
+  const [supplierPays, setSupplierPays] = useState<SupplyPay[]>([])
   const [payouts, setPayouts] = useState<Payout[]>([])
   const [ledgerPays, setLedgerPays] = useState<LedgerPay[]>([])
 
@@ -169,7 +170,7 @@ export default function OrderPage() {
       invIds.length ? supabase.from('credit_notes').select('id, invoice_id, credit_note_number, status, currency, total_amount, issue_date').in('invoice_id', invIds).order('created_at') : none,
       poIds.length ? supabase.from('purchase_order_lines').select('id, po_id, quote_line_id, description, unit, quantity_ordered, quantity_received, unit_price, vat_rate').in('po_id', poIds).order('sort_order') : none,
       poIds.length ? supabase.from('goods_received_notes').select('id, grn_number, po_id, status, received_date, created_at, delivery_note_number, notes').in('po_id', poIds).order('created_at', { ascending: false }) : none,
-      poIds.length ? supabase.from('supplier_invoices').select('id, invoice_number, bill_number, po_id, grn_id, status, approval_status, currency, subtotal, total_amount, amount_paid, balance_due, due_date').eq('company_id', cid).in('po_id', poIds) : none,
+      poIds.length ? supabase.from('supplier_invoices').select('id, invoice_number, bill_number, po_id, grn_id, status, approval_status, currency, subtotal, total_amount, amount_paid, balance_due, amount_refunded, due_date').eq('company_id', cid).in('po_id', poIds) : none,
       rfqIds.length ? supabase.from('rfq_recipients').select('supplier_id, send_to').in('rfq_id', rfqIds) : none,
       // The client-account line for each payment: that's what goes to Xero (and carries its Xero mark).
       invIds.length ? supabase.from('customer_ledger_entries').select('id, source_id, credit, entry_date').eq('entry_type', 'payment').eq('source_table', 'finance_invoices').in('source_id', invIds).order('created_at') : none,
@@ -184,7 +185,12 @@ export default function OrderPage() {
     setAllBills(allBills)
     setBills(allBills.filter(b => !['voided', 'cancelled', 'rejected'].includes(String(b.status))))
     setSendTo(new Map(((rcRes.data ?? []) as { supplier_id: string; send_to: string | null }[]).filter(r => r.send_to).map(r => [r.supplier_id, r.send_to as string])))
-    const gl = grnRows.length ? await supabase.from('goods_received_lines').select('grn_id, description, quantity_received').in('grn_id', grnRows.map(g => g.id)) : { data: [] }
+    const [gl, sp] = await Promise.all([
+      grnRows.length ? supabase.from('goods_received_lines').select('grn_id, po_line_id, description, quantity_received, quantity_rejected, reject_reason').in('grn_id', grnRows.map(g => g.id)) : Promise.resolve({ data: [] }),
+      // Payments to suppliers on this order's bills (deposits, part payments).
+      allBills.length ? supabase.from('finance_transactions').select('id, source_id, amount, transaction_date, payment_method, reference_number, transaction_type').eq('source_table', 'supplier_invoices').in('source_id', allBills.map(b => b.id)).order('transaction_date') : Promise.resolve({ data: [] }),
+    ])
+    setSupplierPays((sp.data ?? []) as SupplyPay[])
     setGrnLines((gl.data ?? []) as SupplyGrnLine[])
     setLoading(false)
   }, [id])
@@ -313,30 +319,19 @@ export default function OrderPage() {
     { id: 'invoices', label: 'Invoices', short: 'Invoices', icon: 'receipt_long', count: invoices.length + credits.length },
     { id: 'payments', label: 'Payments', short: 'Payments', icon: 'payments', count: payments.length },
   ]
+  const oldBills = bills.filter(b => !!b.grn_id)
   const BUY_TABS: { id: BuyTab; label: string; count: number }[] = [
     { id: 'pos', label: 'Purchase orders', count: pos.length },
     { id: 'received', label: 'Goods received', count: liveGrns.length },
-    { id: 'bills', label: 'Supplier bills', count: bills.length + payouts.length },
     { id: 'rfqs', label: 'Price requests', count: rfqs.length },
+    // Old per-delivery bills and contractor payouts only (a PO's own bill is paid on Purchase orders).
+    ...(oldBills.length + payouts.length > 0 ? [{ id: 'bills' as BuyTab, label: 'Other supplier bills', count: oldBills.length + payouts.length }] : []),
   ]
 
-  // ── What's next: one sentence, one button ──
+  // ── Client money ──
   const owingInvoice = sentInvoices.find(i => (Number(i.balance_due) || 0) > 0.004)
   const draftInvoice = invoices.find(i => String(i.status) === 'draft')
   const paidPct = money.value > 0 ? Math.min(100, Math.round((money.paid / money.value) * 100)) : 0
-  type Next = { tone: 'amber' | 'blue' | 'green'; icon: string; title: string; sub: string; action?: { label: string; href?: string; onClick?: () => void } }
-  const next: Next | null = notAccepted ? null
-    : draftInvoice ? { tone: 'blue', icon: 'edit_note', title: 'An invoice is ready to check and send', sub: `${draftInvoice.invoice_number ?? 'Draft'} · ${formatCurrency(Number(draftInvoice.total_amount) || 0, cur)}`, action: { label: 'Open invoice', href: `/dashboard/money/invoices/${draftInvoice.id}` } }
-    : money.state === 'to_invoice' ? { tone: 'blue', icon: 'receipt_long', title: 'Next: invoice the client', sub: `Nothing invoiced yet · order ${formatCurrency(money.value, cur)}`, action: { label: 'Create invoice', onClick: startInvoice } }
-    : owingInvoice ? { tone: 'amber', icon: 'hourglass_top', title: `Waiting for payment: ${formatCurrency(money.owing, cur)}`, sub: `${formatCurrency(money.paid, cur)} paid of ${formatCurrency(money.value, cur)}`, action: { label: 'Record payment', href: `/dashboard/money/invoices/${owingInvoice.id}?pay=1` } }
-    : money.toInvoice > 0.01 ? { tone: 'blue', icon: 'receipt_long', title: `Next: invoice the rest, ${formatCurrency(money.toInvoice, cur)}`, sub: `${formatCurrency(money.paid, cur)} paid of ${formatCurrency(money.value, cur)}`, action: { label: 'Create invoice', onClick: startInvoice } }
-    : { tone: 'green', icon: 'check_circle', title: 'All paid', sub: `${formatCurrency(money.paid, cur)} received` }
-  const toneCls = {
-    amber: 'bg-amber-50 text-amber-700 dark:bg-amber-950/40 dark:text-amber-300',
-    blue: 'bg-blue-50 text-[#2563EB] dark:bg-blue-950/40 dark:text-blue-300',
-    green: 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300',
-  }
-  const btnCls = 'h-9 px-4 rounded-[10px] bg-[#2563EB] text-white text-[13px] font-semibold hover:bg-[#1D4ED8] disabled:opacity-60 inline-flex items-center justify-center whitespace-nowrap'
   const chip = 'inline-flex items-center gap-1 h-7 px-2.5 rounded-full border text-[12px] whitespace-nowrap'
 
   // Team only: one profit line (actual once costs are in, otherwise from the quote's cost prices).
@@ -382,20 +377,16 @@ export default function OrderPage() {
         {error && <p className="text-[12px] text-error bg-red-50 border border-red-100 rounded-lg px-3 py-2 dark:bg-red-950/40 dark:border-red-900">{error}</p>}
         {note && !error && <p className="text-[12.5px] text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 dark:bg-emerald-950/40 dark:text-emerald-200 dark:border-emerald-900" role="status">{note}</p>}
 
-        {/* ── What's next (small) ── */}
-        {next && (
-          <div className="rounded-xl border border-divider bg-surface px-3 py-2.5 flex items-center gap-3 flex-wrap sm:flex-nowrap">
-            <span className={cn('w-8 h-8 rounded-[9px] flex items-center justify-center shrink-0', toneCls[next.tone])}><span className="material-icons !text-[18px]">{next.icon}</span></span>
-            <div className="flex-1 min-w-0">
-              <p className="text-[13.5px] font-semibold text-text-primary leading-tight">{next.title}</p>
-              <div className="flex items-center gap-2 mt-1">
-                <span className="text-[11.5px] text-text-secondary whitespace-nowrap">{next.sub}</span>
-                {money.value > 0 && <span className="flex-1 max-w-[180px] h-1.5 rounded-full bg-surface-elevated border border-divider overflow-hidden"><i className="block h-full bg-emerald-500" style={{ width: `${paidPct}%` }} /></span>}
-              </div>
+        {/* ── How the client is paying (only that) ── */}
+        {!notAccepted && (
+          <div className="rounded-xl border border-divider bg-surface px-3.5 py-2.5 flex items-center gap-x-5 gap-y-2 flex-wrap">
+            <div><b className="block text-[14.5px] tabular-nums text-emerald-700 dark:text-emerald-400">{formatCurrency(money.paid, cur)}</b><span className="text-[11px] text-text-secondary">paid by the client</span></div>
+            <div className="flex-1 min-w-[120px]">
+              <span className="block h-1.5 rounded-full bg-surface-elevated border border-divider overflow-hidden"><i className="block h-full bg-emerald-500" style={{ width: `${paidPct}%` }} /></span>
+              <span className="text-[11px] text-text-secondary">{paidPct}% of {formatCurrency(money.value, cur)}</span>
             </div>
-            {next.action && (next.action.href
-              ? <Link href={next.action.href} className={cn(btnCls, 'w-full sm:w-auto')}>{next.action.label}</Link>
-              : <button type="button" disabled={!!busy} onClick={next.action.onClick} className={cn(btnCls, 'w-full sm:w-auto')}>{busy === 'invoice' ? 'Opening…' : next.action.label}</button>)}
+            <div><b className={cn('block text-[14.5px] tabular-nums', money.owing > 0.004 ? 'text-error' : 'text-text-primary')}>{formatCurrency(money.owing, cur)}</b><span className="text-[11px] text-text-secondary">still owing</span></div>
+            <div><b className="block text-[14.5px] tabular-nums text-text-primary">{formatCurrency(money.toInvoice, cur)}</b><span className="text-[11px] text-text-secondary">not invoiced yet</span></div>
           </div>
         )}
 
@@ -542,6 +533,13 @@ export default function OrderPage() {
         {/* ── Invoices ── */}
         {tab === 'invoices' && (
           <div className="space-y-3">
+            {draftInvoice && (
+              <div className="rounded-xl border border-[#2563EB]/40 bg-surface px-3 py-2 flex items-center gap-2 flex-wrap">
+                <span className="material-icons !text-[18px] text-[#2563EB]">edit_note</span>
+                <p className="flex-1 text-[12.5px] text-text-primary"><b>{draftInvoice.invoice_number ?? 'A draft invoice'}</b> for {formatCurrency(Number(draftInvoice.total_amount) || 0, cur)} is ready: check it, then send it to the client.</p>
+                <Link href={`/dashboard/money/invoices/${draftInvoice.id}`} className="h-8 px-3 rounded-lg bg-[#2563EB] text-white text-[12px] font-semibold inline-flex items-center hover:bg-[#1D4ED8]">Open invoice</Link>
+              </div>
+            )}
             {/* Where the order's money is, in plain words: one line each. */}
             <div className="rounded-xl border border-divider bg-surface overflow-hidden max-w-xl">
               <table className="w-full">
@@ -596,7 +594,7 @@ export default function OrderPage() {
         {/* ── Payments ── */}
         {tab === 'payments' && (
           <div className="space-y-3">
-            <Section title="Payments received" action={owingInvoice && !notAccepted && next?.action?.label !== 'Record payment' ? <Link href={`/dashboard/money/invoices/${owingInvoice.id}?pay=1`} className="btn-primary h-8 px-3 text-[12px] inline-flex items-center gap-1"><span className="material-icons text-[16px]">add</span>Record payment</Link> : undefined}>
+            <Section title="Payments received" action={owingInvoice && !notAccepted ? <Link href={`/dashboard/money/invoices/${owingInvoice.id}?pay=1`} className="btn-primary h-8 px-3 text-[12px] inline-flex items-center gap-1"><span className="material-icons text-[16px]">add</span>Record payment</Link> : undefined}>
               {payments.length === 0 ? <Empty text="No payments yet. When the client pays, press Record payment: it goes onto their invoice." /> : (
                 <ResponsiveDataView table={
                   <table className="w-full" style={{ minWidth: 520 }}>
@@ -645,10 +643,10 @@ export default function OrderPage() {
             </div>
             {buyTab === 'pos' && companyId && (
               <PurchaseOrdersPanel companyId={companyId} quoteId={quote.id} pos={pos} poLines={poLines} sendTo={sendTo} toSource={toSource}
-                canProcess={canProcess} processing={processing} onProcess={() => void runProcessOrder()} onChanged={async () => { setNote(null); await load() }} />
+                bills={allBills} pays={supplierPays} canProcess={canProcess} processing={processing} onProcess={() => void runProcessOrder()} onChanged={async () => { setNote(null); await load() }} />
             )}
             {buyTab === 'received' && (
-              <GoodsReceivedPanel grns={grns} grnLines={grnLines} bills={allBills} pos={pos} onChanged={async () => { setNote(null); await load() }} />
+              <GoodsReceivedPanel grns={grns} grnLines={grnLines} bills={allBills} pos={pos} poLines={poLines} onChanged={async () => { setNote(null); await load() }} />
             )}
             {buyTab === 'rfqs' && (
               <>
