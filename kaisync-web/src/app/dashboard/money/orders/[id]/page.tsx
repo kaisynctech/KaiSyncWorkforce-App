@@ -456,7 +456,7 @@ export default function OrderPage() {
               <button key={t.id} type="button" role="tab" aria-selected={on} onClick={() => { setTab(t.id); setNote(null) }}
                 className={cn('h-11 rounded-xl flex items-center justify-center gap-1.5 px-1.5 text-[12.5px] sm:text-[14px] font-semibold transition-all min-w-0',
                   on ? 'relative bg-surface text-text-primary border border-divider shadow-[0_1px_3px_rgba(15,23,42,.16),0_6px_16px_rgba(15,23,42,.10)] after:absolute after:left-1/2 after:-translate-x-1/2 after:bottom-1 after:h-[3px] after:w-8 after:rounded-full after:bg-text-primary' : 'text-text-secondary hover:text-text-primary')}>
-                <span className={cn('material-icons !text-[18px] hidden sm:inline', on ? 'text-slate-700 dark:text-white' : '')}>{t.icon}</span>
+                <span className={cn('material-icons !text-[18px] max-sm:!hidden', on ? 'text-slate-700 dark:text-white' : '')}>{t.icon}</span>
                 <span className="truncate sm:hidden">{t.short}</span><span className="truncate hidden sm:inline">{t.label}</span>
                 {t.count > 0 && <span className={cn('hidden sm:inline-block min-w-[20px] h-5 px-1.5 rounded-full text-[11px] leading-5 text-center', on ? 'bg-slate-900 text-white dark:bg-white dark:text-slate-900' : 'border border-divider text-text-secondary')}>{t.count}</span>}
               </button>

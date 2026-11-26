@@ -201,9 +201,9 @@ export function PurchaseOrdersPanel({ companyId, pos, poLines, sendTo, toSource,
         <div className={cn(card, 'overflow-x-auto')}>
           <table className="w-full">
             <thead><tr className="border-b border-divider">
-              <th className={TH}>PO</th><th className={TH}>Supplier</th><th className={cn(TH, 'w-full')}>Items</th>
-              <th className={cn(TH, '!text-right')}>Amount</th><th className={cn(TH, '!text-right')}>Paid</th><th className={cn(TH, '!text-right')}>Still to pay</th>
-              <th className={TH}>Payment</th><th className={TH}>Delivery</th><th className={TH} />
+              <th className={TH}>PO</th><th className={TH}>Supplier</th><th className={cn(TH, 'w-full max-sm:hidden')}>Items</th>
+              <th className={cn(TH, '!text-right max-sm:hidden')}>Amount</th><th className={cn(TH, '!text-right max-sm:hidden')}>Paid</th><th className={cn(TH, '!text-right')}>Still to pay</th>
+              <th className={TH}>Payment</th><th className={cn(TH, 'max-sm:hidden')}>Delivery</th><th className={TH} />
             </tr></thead>
             <tbody>
               {shown.map(p => {
@@ -228,12 +228,12 @@ export function PurchaseOrdersPanel({ companyId, pos, poLines, sendTo, toSource,
                   <tr key={p.id} className="border-b border-divider last:border-0">
                     <td className={TD}><Link href={`/dashboard/supply/purchase-orders/${p.id}`} className="font-semibold text-[#2563EB] hover:underline">{p.po_number ?? 'PO'}</Link></td>
                     <td className={TD}>{p.supplier?.name ?? 'Supplier'}</td>
-                    <td className={cn(TD, 'max-w-[260px] truncate')} title={items.join(', ')}>{items[0] ?? '—'}{items.length > 1 && <span className="text-text-secondary"> +{items.length - 1}</span>}</td>
-                    <td className={cn(TD, 'text-right tabular-nums font-semibold')}>{money(m.total, p.currency)}</td>
-                    <td className={cn(TD, 'text-right tabular-nums')}>{money(m.paid, p.currency)}</td>
+                    <td className={cn(TD, 'max-w-[260px] truncate max-sm:hidden')} title={items.join(', ')}>{items[0] ?? '—'}{items.length > 1 && <span className="text-text-secondary"> +{items.length - 1}</span>}</td>
+                    <td className={cn(TD, 'text-right tabular-nums font-semibold max-sm:hidden')}>{money(m.total, p.currency)}</td>
+                    <td className={cn(TD, 'text-right tabular-nums max-sm:hidden')}>{money(m.paid, p.currency)}</td>
                     <td className={cn(TD, 'text-right tabular-nums font-semibold', m.owing > 0.004 && !cancelled ? 'text-text-primary' : 'text-text-secondary')}>{cancelled ? '—' : money(m.owing, p.currency)}</td>
                     <td className={TD}><span className={cn(pill, payPill.c)}>{payPill.t}</span></td>
-                    <td className={TD}>{delPill ? <span className={cn(pill, delPill.c)}>{delPill.t}</span> : '—'}</td>
+                    <td className={cn(TD, 'max-sm:hidden')}>{delPill ? <span className={cn(pill, delPill.c)}>{delPill.t}</span> : '—'}</td>
                     <td className={cn(TD, 'text-right')}>
                       <span className="inline-flex gap-1">
                         {p.status === 'approved' && (
@@ -542,9 +542,9 @@ export function GoodsReceivedPanel({ grns, grnLines, bills, pos, poLines = [], o
         <div className={cn(card, 'overflow-x-auto')}>
           <table className="w-full">
             <thead><tr className="border-b border-divider">
-              <th className={TH}>PO</th><th className={TH}>Supplier</th><th className={cn(TH, 'w-full')}>Item</th>
-              <th className={cn(TH, '!text-right')}>Ordered</th><th className={cn(TH, '!text-right')}>Received</th><th className={cn(TH, '!text-right')}>Sent back</th>
-              <th className={cn(TH, '!text-right')}>Still to come</th><th className={TH}>Paid?</th><th className={TH} />
+              <th className={TH}>PO</th><th className={cn(TH, 'max-sm:hidden')}>Supplier</th><th className={cn(TH, 'w-full')}>Item</th>
+              <th className={cn(TH, '!text-right max-sm:hidden')}>Ordered</th><th className={cn(TH, '!text-right max-sm:hidden')}>Received</th><th className={cn(TH, '!text-right max-sm:hidden')}>Sent back</th>
+              <th className={cn(TH, '!text-right')}>Still to come</th><th className={cn(TH, 'max-sm:hidden')}>Paid?</th><th className={TH} />
             </tr></thead>
             <tbody>
               {waiting.map(({ p, l }, i) => {
@@ -557,13 +557,13 @@ export function GoodsReceivedPanel({ grns, grnLines, bills, pos, poLines = [], o
                 return (
                   <tr key={l.id} className="border-b border-divider last:border-0">
                     <td className={TD}>{firstOfPo ? <Link href={`/dashboard/supply/purchase-orders/${p.id}`} className="font-semibold text-[#2563EB] hover:underline">{p.po_number}</Link> : ''}</td>
-                    <td className={TD}>{firstOfPo ? p.supplier?.name ?? '—' : ''}</td>
-                    <td className={cn(TD, 'max-w-[260px] truncate')} title={l.description ?? ''}>{l.description}</td>
-                    <td className={cn(TD, 'text-right tabular-nums')}>{q3(n0(l.quantity_ordered))}</td>
-                    <td className={cn(TD, 'text-right tabular-nums')}>{q3(n0(l.quantity_received))}</td>
-                    <td className={cn(TD, 'text-right tabular-nums', back > 0 && 'text-error font-semibold')}>{q3(back)}</td>
+                    <td className={cn(TD, 'max-sm:hidden')}>{firstOfPo ? p.supplier?.name ?? '—' : ''}</td>
+                    <td className={cn(TD, 'max-w-[260px] truncate max-sm:max-w-[140px]')} title={l.description ?? ''}>{l.description}</td>
+                    <td className={cn(TD, 'text-right tabular-nums max-sm:hidden')}>{q3(n0(l.quantity_ordered))}</td>
+                    <td className={cn(TD, 'text-right tabular-nums max-sm:hidden')}>{q3(n0(l.quantity_received))}</td>
+                    <td className={cn(TD, 'text-right tabular-nums max-sm:hidden', back > 0 && 'text-error font-semibold')}>{q3(back)}</td>
                     <td className={cn(TD, 'text-right tabular-nums font-bold')}>{left > 0 ? q3(left) : <span className={cn(pill, P.green)}>All in</span>}</td>
-                    <td className={TD}>{firstOfPo ? <span className={cn(pill, paid.c)}>{paid.t}</span> : ''}</td>
+                    <td className={cn(TD, 'max-sm:hidden')}>{firstOfPo ? <span className={cn(pill, paid.c)}>{paid.t}</span> : ''}</td>
                     <td className={cn(TD, 'text-right')}>{firstOfPo && poLeft && <button type="button" className={cn(xs, 'bg-emerald-600 text-white hover:bg-emerald-700')} onClick={() => setOpen({ id: p.id, kind: 'receive' })}>Receive</button>}</td>
                   </tr>
                 )
